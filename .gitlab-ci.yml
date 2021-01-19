@@ -1,0 +1,16 @@
+stages:
+  - buildlab12
+
+buildlab12:
+  stage: buildlab12
+  script:
+    - cd lab12
+    - make
+  artifacts:
+    paths:
+      - ctcp_linked_list.o
+      - ctcp_utils.o
+      - ctcp.o
+      - ctcp_sys_internal.o
+      - ctcp
+
