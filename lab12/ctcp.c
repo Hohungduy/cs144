@@ -149,7 +149,7 @@ void ctcp_destroy(ctcp_state_t *state) {
   end_client();
 }
 
-/* sending normal segment */
+/* sending segment to the connected host */
 void ctcp_send_segment(ctcp_state_t *state);
 /* inform sender the receiver window size */
 void ctcp_send_control_segment(ctcp_state_t *state); 
