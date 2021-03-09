@@ -95,6 +95,7 @@ ctcp_state_t *ctcp_init(conn_t *conn, ctcp_config_t *cfg) {
 
   /* Established a connection. Create a new state and update the linked list
      of connection states. */
+  // Push to the top ( Add the latest linked list)
   ctcp_state_t *state = calloc(sizeof(ctcp_state_t), 1);
   state->next = state_list;
   state->prev = &state_list;
@@ -125,18 +126,19 @@ ctcp_state_t *ctcp_init(conn_t *conn, ctcp_config_t *cfg) {
   state->rx_state.truncated_segment_count = 0;
   state->rx_state.out_of_window_segment_count = 0;
 
-  #ifdef ENABLE_DBG_PRINTS
-  fprintf(stderr, "state->ctcp_config.recv_window  : %d\n", state->ctcp_config.recv_window );
-  fprintf(stderr, "state->ctcp_config.send_window  : %d\n", state->ctcp_config.send_window );
-  fprintf(stderr, "state->ctcp_config.timer        : %d\n", state->ctcp_config.timer );
-  fprintf(stderr, "state->ctcp_config.rt_timeout   : %d\n", state->ctcp_config.rt_timeout );
+  #ifdef DEBUG_PRINT
+  fprintf(stderr, "state->ctcp_cfg.recv_window  : %d\n", state->ctcp_cfg.recv_window );
+  fprintf(stderr, "state->ctcp_cfg.send_window  : %d\n", state->ctcp_cfg.send_window );
+  fprintf(stderr, "state->ctcp_cfg.timer        : %d\n", state->ctcp_cfg.timer );
+  fprintf(stderr, "state->ctcp_cfg.rt_timeout   : %d\n", state->ctcp_cfg.rt_timeout );
   #endif
 
   return state;
 }
 
 void ctcp_destroy(ctcp_state_t *state) {
-  /* Update linked list. */
+  /* Update linked list -stack. */
+  // Pop from the top (the latest state)
   if (state->next)
     state->next->prev = state->prev;
 
@@ -145,10 +147,50 @@ void ctcp_destroy(ctcp_state_t *state) {
 
   /* FIXME: Do any other cleanup here. */
   /* REMEMBER: Destroy linked list of the sending and receiving segments*/
+
+  ll_node_t *current_node = NULL;
+  ll_node_t *next_node = NULL;
+  linked_list_t *list = NULL;
+  /* Remove linked list of sending segments: tx_state_t tx_state.unacked_send_segment
+     - Firstly, we need to destroy object in node
+     - Secondly, delete list or remove node respectively associated to object
+     and remove after that
+  */ 
+  list = state->tx_state.unacked_send_segment;
+  if(list == NULL)
+    goto end_state;
+  for((current_node = list->head); current_node != NULL; current_node = next_node)
+  {
+    /* free memory of object in node */
+    if(current_node->object)
+      free(current_node->object);
+    next_node = current_node->next; // may be use list->head instead
+    free(current_node);
+  }
+  free(list);
+  /* Remove linked list of receiving segments: rx_state_t rx_state.segment
+    - Firstly, we need to destroy object in node
+    - Secondly, delete list or remove node respectively associated to object
+    and remove after that
+  */
+
+  list = state->rx_state.segment;
+  if(list == NULL)
+    goto end_state;
+  for((current_node = list->head); current_node != NULL; current_node = next_node)
+  {
+    /* free memory of object in node */
+    if(current_node->object)
+      free(current_node->object);
+    next_node = current_node->next; // may be use list->head instead
+    free(current_node);
+  }
+  free(list);
+end_state:
   free(state);
   end_client();
 }
-
+////////////////////////////HELPER FUNCTION//////////////////////////////
 /* sending segment to the connected host */
 void ctcp_send_segment(ctcp_state_t *state);
 /* inform sender the receiver window size */
@@ -157,7 +199,7 @@ void ctcp_send_control_segment(ctcp_state_t *state);
 /* Function associated to read, send, receive, output and timer */
 void ctcp_read(ctcp_state_t *state) {
   /* FIXME */
-  char tmp_buf[MAX_SEG_DATA_SIZE];
+  char tmp_buf[MAX_SEG_DATA_SIZE];/* statically allocate in stack/ maybe use with dynamic allocate */
   uint16_t byte_read;
   ctcp_unacked_send_segment_t *new_send_segment;/* include headers and data (variable string) */
   while((byte_read = conn_input(state->conn, &tmp_buf, MAX_SEG_DATA_SIZE )) > 0)
@@ -185,6 +227,7 @@ void ctcp_read(ctcp_state_t *state) {
     /* Adding this new send segment into linked list */
     ll_add(state->tx_state.unacked_send_segment, new_send_segment);
   }
+  /* Reading an EOF -> send FIN to the other side*/
   if(-1 == byte_read)
   {
     state->tx_state.read_EOF = true;
@@ -198,12 +241,11 @@ void ctcp_read(ctcp_state_t *state) {
     new_send_segment->segment.seqno = htonl(state->tx_state.last_seqno_read + 1);
     /* update pointer to the last byte read (assume 1byte data) */
     state->tx_state.last_seqno_read += 1;
-      /* Adding this new send segment into linked list */
+    /* Adding this new send segment into linked list */
     ll_add(state->tx_state.unacked_send_segment, new_send_segment);
   }
+  /* sending segment */
   ctcp_send_segment(state);
-  free(new_send_segment);
-
 }
 
 void ctcp_send_segment(ctcp_state_t *state) {
