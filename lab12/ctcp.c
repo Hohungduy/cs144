@@ -16,7 +16,8 @@
 #include "ctcp_sys.h"
 #include "ctcp_utils.h"
 
-#undef DEBUG_PRINT
+/* MACRO for debug printf */
+#define DEBUG_PRINT
 
 /* state associated to list of transmit segment (unacked) */
 typedef struct tx_state{
@@ -48,12 +49,12 @@ typedef struct rx_state{
   linked_list_t *segment; /* Linked list of segments receive from this connection */
 }rx_state_t;
 
-typedef struct unacked_send_segment{
+typedef struct ctcp_unacked_send_segment{
   uint32_t retramsmit_segment; /* counter associated to the number of segment has been sent*/
   long time_lastsegment_sent; /* time that last segment sent*/
-  linked_list_t *segment; /* Linked list of segments send to this connection */
+  ctcp_segment_t segment; /* Segment */
 
-}unacked_send_segment_t;
+}ctcp_unacked_send_segment_t;
 /**
  * Connection state.
  *
@@ -124,6 +125,13 @@ ctcp_state_t *ctcp_init(conn_t *conn, ctcp_config_t *cfg) {
   state->rx_state.truncated_segment_count = 0;
   state->rx_state.out_of_window_segment_count = 0;
 
+  #ifdef ENABLE_DBG_PRINTS
+  fprintf(stderr, "state->ctcp_config.recv_window  : %d\n", state->ctcp_config.recv_window );
+  fprintf(stderr, "state->ctcp_config.send_window  : %d\n", state->ctcp_config.send_window );
+  fprintf(stderr, "state->ctcp_config.timer        : %d\n", state->ctcp_config.timer );
+  fprintf(stderr, "state->ctcp_config.rt_timeout   : %d\n", state->ctcp_config.rt_timeout );
+  #endif
+
   return state;
 }
 
@@ -136,13 +144,73 @@ void ctcp_destroy(ctcp_state_t *state) {
   conn_remove(state->conn);
 
   /* FIXME: Do any other cleanup here. */
-
+  /* REMEMBER: Destroy linked list of the sending and receiving segments*/
   free(state);
   end_client();
 }
 
+/* sending normal segment */
+void ctcp_send_segment(ctcp_state_t *state);
+/* inform sender the receiver window size */
+void ctcp_send_control_segment(ctcp_state_t *state); 
+
+/* Function associated to read, send, receive, output and timer */
 void ctcp_read(ctcp_state_t *state) {
   /* FIXME */
+  char tmp_buf[MAX_SEG_DATA_SIZE];
+  uint16_t byte_read;
+  ctcp_unacked_send_segment_t *new_send_segment;/* include headers and data (variable string) */
+  while((byte_read = conn_input(state->conn, &tmp_buf, MAX_SEG_DATA_SIZE )) > 0)
+  {
+    new_send_segment = (ctcp_unacked_send_segment_t *)calloc(1, sizeof(ctcp_unacked_send_segment_t) + byte_read);
+    if(new_send_segment == NULL)
+    {
+      #ifdef DEBUG_PRINT
+      // perror("Allocate memory\n");
+      fprintf(stderr,"%d-%s: Allocate memory\n",__LINE__,__func__);
+      #endif
+      exit(EXIT_FAILURE);
+    }
+    /* Initialize the new send segment  */
+    /* Init retransmit count*/
+    new_send_segment->retramsmit_segment = 0;
+    /* init sequence number */
+    new_send_segment->segment.seqno = htonl(state->tx_state.last_seqno_read + 1);
+    /* init length */
+    new_send_segment->segment.len = htons((uint16_t)(sizeof(ctcp_unacked_send_segment_t) + byte_read)); //2 bytes
+    /* copy from tmp_buf to segment buf */
+    memcpy(new_send_segment->segment.data, tmp_buf, byte_read);
+    /* update pointer to the last byte read */
+    state->tx_state.last_seqno_read += byte_read;
+    /* Adding this new send segment into linked list */
+    ll_add(state->tx_state.unacked_send_segment, new_send_segment);
+  }
+  if(-1 == byte_read)
+  {
+    state->tx_state.read_EOF = true;
+    /* Create FIN segment*/
+    new_send_segment = (ctcp_unacked_send_segment_t *)calloc(1, sizeof(ctcp_unacked_send_segment_t));
+    /* init retransmit segment */
+    new_send_segment->retramsmit_segment = 0;
+    /* init length */
+    new_send_segment->segment.len = htons((uint16_t)(sizeof(ctcp_unacked_send_segment_t)));
+    /* init seq_number */
+    new_send_segment->segment.seqno = htonl(state->tx_state.last_seqno_read + 1);
+    /* update pointer to the last byte read (assume 1byte data) */
+    state->tx_state.last_seqno_read += 1;
+      /* Adding this new send segment into linked list */
+    ll_add(state->tx_state.unacked_send_segment, new_send_segment);
+  }
+  ctcp_send_segment(state);
+  free(new_send_segment);
+
+}
+
+void ctcp_send_segment(ctcp_state_t *state) {
+  
+}
+void ctcp_send_control_segment(ctcp_state_t *state){
+
 }
 
 void ctcp_receive(ctcp_state_t *state, ctcp_segment_t *segment, size_t len) {
