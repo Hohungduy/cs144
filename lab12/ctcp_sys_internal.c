@@ -88,7 +88,7 @@ static struct timespec last_timeout;
 /** Number of clients connected. MAX_NUM_CLIENTS can be connected. */
 static int num_connected = 0;
 
-/** Main thread and thread for sending rests. */
+/** Main thread and thread for sending resets. */
 static pthread_t thread_main;
 static pthread_t thread_resets;
 static bool handling_resets = false;
