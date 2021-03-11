@@ -554,6 +554,7 @@ int send_tcp_conn_seg(conn_t *dst, int flags) {
 
   if (r < 0) {
     fprintf(stderr, "[ERROR] Could not connect\n");
+    fprintf(stderr, "%d - %s\n", __LINE__,__func__);
     return -1;
   }
   return 0;

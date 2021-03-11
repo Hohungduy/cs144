@@ -28,6 +28,8 @@
  */
 #define MAX_SEG_DATA_SIZE 1440
 
+/* Normally 60s */
+#define MAX_SEG_LIFETIME 5000
 /**
  * cTCP flags.
  *
