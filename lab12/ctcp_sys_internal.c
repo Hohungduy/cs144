@@ -16,7 +16,6 @@
 #include <stddef.h>
 #include <time.h>
 #include <unistd.h>
-
 #include "ctcp_sys_internal.h"
 #include "ctcp_sys.h"
 
@@ -492,7 +491,12 @@ int send_pkt(conn_t *dst, int sockfd, const void *buf, size_t len, int flags) {
     addr = (struct sockaddr *) &dst->saddr;
     size = sizeof(dst->saddr);
   }
-
+  // int ret = sendto(config->socket, buf, len, flags, addr, size);
+  // if(ret != 0)
+  // {
+  //   perror ("sendto: ");
+  //   fprintf(stderr,"%d\n",errno);
+  // }
   return sendto(config->socket, buf, len, flags, addr, size);
 }
 
@@ -554,7 +558,7 @@ int send_tcp_conn_seg(conn_t *dst, int flags) {
 
   if (r < 0) {
     fprintf(stderr, "[ERROR] Could not connect\n");
-    fprintf(stderr, "%d - %s\n", __LINE__,__func__);
+    // fprintf(stderr, "%d - %s\n", __LINE__,__func__);
     return -1;
   }
   return 0;

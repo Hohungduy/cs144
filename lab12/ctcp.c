@@ -17,7 +17,7 @@
 #include "ctcp_utils.h"
 
 /* MACRO for debug printf */
-#define DEBUG_PRINT
+// #define DEBUG_PRINT
 
 /* state associated to list of transmit segment (unacked) */
 typedef struct tx_state{
@@ -116,7 +116,7 @@ ctcp_state_t *ctcp_init(conn_t *conn, ctcp_config_t *cfg) {
   state->conn = conn;
   state->timeout_connection = 0;
   /* FIXME: Do any other initialization here. */
-  
+
   #ifdef DEBUG_PRINT
   fprintf(stderr, "%d - %s\n", __LINE__,__func__);
   #endif
@@ -682,7 +682,7 @@ void ctcp_timer() {
 
   Remember to retrieve segment data from state_list pointer (current state) and check retransmission count
   */
-
+  if (state_list == NULL) return;
   ctcp_state_t *state = state_list; /* current state */
   linked_list_t *sending_list = state->tx_state.tx_segment;/* sending list */
   linked_list_t *receiving_list = state->rx_state.rx_segment;/* receiving list */
