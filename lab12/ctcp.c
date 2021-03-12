@@ -175,9 +175,9 @@ void ctcp_destroy(ctcp_state_t *state) {
     if(current_node->object)
       free(current_node->object);
     next_node = current_node->next; // may be use list->head instead
-    free(current_node);
+    ll_remove(list,current_node);
   }
-  free(list);
+  ll_destroy(list);
 
   /* Remove linked list of receiving segments: rx_state_t rx_state.segment
     - Firstly, we need to destroy object in node
@@ -194,12 +194,17 @@ void ctcp_destroy(ctcp_state_t *state) {
     if(current_node->object)
       free(current_node->object);
     next_node = current_node->next; // may be use list->head instead
-    free(current_node);
+    ll_remove(list,current_node);
   }
-  free(list);
+  ll_destroy(list);
 
 end_state:
-  free(state);
+  if(state)
+    free(state);
+  // if(&state->ctcp_cfg)
+  //   free(&state->ctcp_cfg);
+  // if(state->conn)
+  //   free(state->conn);
   end_client();
 }
 
@@ -310,12 +315,13 @@ void ctcp_send_multiple_segment(ctcp_state_t *state) {
   current_node = sender_list->head;//init
   next_node = sender_list->head->next;//init
   send_segment = (ctcp_sending_segment_t *)current_node->object;
+  fprintf(stderr,"%d - %s: send_segment:%p\n",__LINE__,__func__,send_segment);
   // send_seqno = ntohl(send_segment->segment.seqno);
   // #ifdef DEBUG_PRINT
   // fprintf(stderr, "%d - %s, seqno:%ld, last_seqno_read:%ld\n", __LINE__,__func__,(long)send_seqno,(long)(state->tx_state.last_seqno_read));
   // #endif
 
-  for((current_node = sender_list->head); ntohl((send_segment = (ctcp_sending_segment_t *)current_node->object)->segment.seqno) <= (state->tx_state.last_seqno_read + 1);
+  for((current_node = sender_list->head); ntohl(send_segment->segment.seqno) <= (state->tx_state.last_seqno_read + 1);
   current_node = next_node)
   {
     if(((send_segment = (ctcp_sending_segment_t *)current_node->object)->segment.flags) & TH_ACK)
@@ -397,6 +403,9 @@ void ctcp_send_multiple_segment(ctcp_state_t *state) {
       state->tx_state.last_seqno_tx += (send_segment->segment.len - sizeof(ctcp_segment_t));/* add datalen */
       next_node = current_node->next;
     }
+    if(next_node == NULL)
+      break;
+    send_segment = (ctcp_sending_segment_t *)next_node->object;
   }
   #ifdef DEBUG_PRINT
   fprintf(stderr, "%d - %s\n", __LINE__,__func__);
@@ -488,7 +497,9 @@ void ctcp_receive(ctcp_state_t *state, ctcp_segment_t *segment, size_t len) {
     fprintf(stderr,"%d - %s: discard truncated segments - len:%d, rcv_segment_len:%d\n",__LINE__,__func__,(int)len,(int)rcv_segment_len);
     #endif
     state->rx_state.truncated_segment_count++;
-    goto end;
+    if(segment)
+      free(segment);
+    return;
   }
 
   /* Checking if checksum value of segment is correct */
@@ -503,7 +514,9 @@ void ctcp_receive(ctcp_state_t *state, ctcp_segment_t *segment, size_t len) {
     fprintf(stderr,"%d - %s: discard wrong segments when we checksum, actual_rc_segment_cksum:%x, corect_recv_cksum:%x\n",__LINE__,__func__,(int)computed_rc_segment_cksum,(int)correct_rcv_segment_cksum);
     #endif
     state->rx_state.checksum_failed_segment_count++;
-    goto end;
+    if(segment)
+      free(segment);
+    return;
   }
   /* Checking if this segment is out of receiving window bound */
   if(rcv_segment_seqno > upperbound_recv_window)
@@ -514,7 +527,9 @@ void ctcp_receive(ctcp_state_t *state, ctcp_segment_t *segment, size_t len) {
     state->rx_state.out_of_window_segment_count++;
     /* sending control message to inform sender know the current receiver window */
     ctcp_send_control_segment(state);
-    goto end;
+    if(segment)
+      free(segment);
+    return;
   }
 
   #ifdef DEBUG_PRINT
@@ -591,25 +606,40 @@ void ctcp_receive(ctcp_state_t *state, ctcp_segment_t *segment, size_t len) {
     */
 
     linked_list_t *send_list = state->tx_state.tx_segment;
-    ctcp_sending_segment_t *send_segment = NULL;
+    if(ll_front(send_list) == NULL)
+    {
+      goto end;
+    }
+    current_node = ll_front(send_list);
+    ctcp_sending_segment_t *send_segment = (ctcp_sending_segment_t *)(current_node->object);
     /* Remove tx_segments have been acked */
-    for(current_node = send_list->head; ntohl((send_segment = (ctcp_sending_segment_t *)(current_node->object))->segment.seqno) < rcv_segment_ackno;
-    current_node = next_node ){
-      ll_remove(send_list, current_node);
+
+    for(current_node = send_list->head; ntohl(send_segment->segment.seqno) < rcv_segment_ackno; current_node = next_node ){
+      
       state->tx_state.last_seqno_acked += (ntohl(send_segment->segment.len) -sizeof(ctcp_segment_t));
       next_node = current_node->next;
+      if(send_segment)
+        free(send_segment);
+      ll_remove(send_list, current_node);
+      if(next_node == NULL)
+        break;
+      send_segment = (ctcp_sending_segment_t *)(next_node->object);
     }
     if((rcv_segment_len - sizeof(ctcp_segment_t)) == 0)
     {
-      /* Piggybagged: Having data (rcv_segment_len =ntohs(segment->len)) */
+      /* Only ACK, no data */
       goto end;
     }
+    /* Piggybagged: Having data (rcv_segment_len =ntohs(segment->len)) */
   }
 data_process:
 
   if(rcv_segment_seqno <= state->rx_state.last_seqno_rep_acked)
-    goto end; /*duplicate data */
-
+  {
+    if(segment)
+      free(segment);/*duplicate data */
+    return;
+  }
   linked_list_t *receive_list = state->rx_state.rx_segment;
   ll_len = ll_length(receive_list);
   ctcp_segment_t *segment_ptr = NULL;
@@ -652,7 +682,9 @@ data_process:
     if(ntohl(first_segment->seqno) == (state->rx_state.last_seqno_rep_acked + 1))
     {
       //discard segment
-      goto end;
+      if(segment)
+       free(segment);
+      return;
     }
     else
     {
@@ -666,7 +698,9 @@ data_process:
       if(ntohl(segment_ptr->seqno) == (state->rx_state.last_seqno_rep_acked + 1))
       {
         //discard segment
-        goto end;
+        if(segment)
+          free(segment);
+        return;
       }
       else{
         current_node = current_node->prev;
@@ -700,7 +734,9 @@ data_process:
     if(ntohl(segment_ptr->seqno) == (rcv_segment_seqno))
     {
       //discard segment
-      goto end;
+      if(segment)
+        free(segment);
+      return;
     }
     else{
       current_node = current_node->prev;
@@ -711,7 +747,7 @@ data_process:
   }
 end:
   ctcp_output(state);
-  free(segment);
+
 
 }
 
@@ -787,7 +823,8 @@ void ctcp_output(ctcp_state_t *state) {
       num_segments_output++;
     }
     /* remove it from the linked list after successfully output*/
-    // free(segment_ptr); /*bad using */
+    if(segment_ptr)
+      free(segment_ptr); /*bad using */
     ll_remove(state->rx_state.rx_segment, first_node);
   }
 end:
@@ -866,6 +903,7 @@ void ctcp_timer() {
           fprintf(stderr,"%d - %s: Destroy connection\n",__LINE__, __func__);
           #endif
           ctcp_destroy(current_state);
+          return;
         }
     }
     #ifdef DEBUG_PRINT
@@ -893,6 +931,7 @@ void ctcp_timer() {
         fprintf(stderr,"%d - %s: destroy connection (retransmit_segment > 5)\n",__LINE__, __func__);
         #endif
         ctcp_destroy(current_state);
+        return;
       }
       else
       {
@@ -903,8 +942,12 @@ void ctcp_timer() {
         ctcp_send_segment(current_state, current_node->object, send_segment->segment.len);
       }
       next_node = current_node->next;
+      if(next_node == NULL)
+        break;
     }
     next_state = current_state->next;
+    if(next_state == NULL)
+      break;
   }
 
 }
