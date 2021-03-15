@@ -18,7 +18,7 @@
 
 /* MACRO for debug printf */
 // #define DEBUG_PRINT
-// #define DEBUG_PRINT2
+#define DEBUG_PRINT2
 /* state associated to list of transmit segment (unacked) */
 typedef struct tx_state{
   bool read_EOF; /* read EOF from STDIN -> send FIN segment*/
@@ -137,8 +137,8 @@ ctcp_state_t *ctcp_init(conn_t *conn, ctcp_config_t *cfg) {
   fprintf(stderr, "state->ctcp_cfg.timer        : %d\n", state->ctcp_cfg.timer );
   fprintf(stderr, "state->ctcp_cfg.rt_timeout   : %d\n", state->ctcp_cfg.rt_timeout );
   #endif
-
-  free(cfg);
+  // if(cfg)
+  //   free(cfg);
   return state;
 }
 
@@ -462,8 +462,8 @@ int ctcp_send_segment(ctcp_state_t *state, ctcp_sending_segment_t *sending_segme
     tmp_buf += byte_send;
     tot_left = htons(ntohs(len) - byte_send);
     memcpy(sending_segment->segment.data, tmp_buf, ntohs(tot_left));
-    // sending_segment->segment.cksum = 0;
-    // sending_segment->segment.cksum = cksum(&sending_segment->segment,ntohs(sending_segment->segment.len));
+    sending_segment->segment.cksum = 0;
+    sending_segment->segment.cksum = cksum(&sending_segment->segment,ntohs(sending_segment->segment.len));
   }
   return ntohs(tot_left);
 }
@@ -914,14 +914,15 @@ void ctcp_timer() {
   {
     sending_list = current_state->tx_state.tx_segment;/* sending list */
     receiving_list = current_state->rx_state.rx_segment;/* receiving list */
-    // ctcp_output(current_state);
-    // #ifdef DEBUG_PRINT2
-    //  fprintf(stderr, "%d - %s\n", __LINE__,__func__);
-    // #endif
-    // ctcp_read(current_state);
-    // #ifdef DEBUG_PRINT2
-    //  fprintf(stderr, "%d - %s\n", __LINE__,__func__);
-    // #endif
+    /* Work with tear down */
+    ctcp_output(current_state);
+    #ifdef DEBUG_PRINT2
+     fprintf(stderr, "%d - %s\n", __LINE__,__func__);
+    #endif
+    ctcp_read(current_state);
+    #ifdef DEBUG_PRINT2
+     fprintf(stderr, "%d - %s\n", __LINE__,__func__);
+    #endif
 
     /**
     * Destroys connection state for a connection. You should call this when all of
