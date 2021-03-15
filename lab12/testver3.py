@@ -148,7 +148,6 @@ def start_server(port=DEFAULT_SERVER_PORT, flags=[], reference=False):
   Function: start_server
   ----------------------
   Starts a cTCP server.
-
   reference: Whether or not to use the reference binary.
   """
   binary = REFERENCE_BINARY if reference else CTCP_BINARY
@@ -163,7 +162,6 @@ def start_client(server="localhost", server_port=DEFAULT_SERVER_PORT,
   Function: start_client
   ----------------------
   Starts a cTCP client.
-
   server: Location of server.
   port: Port to start client at.
   reference: Whether or not to use the reference binary.
@@ -177,7 +175,6 @@ def start_client(server="localhost", server_port=DEFAULT_SERVER_PORT,
 def make_random(length, is_binary=False):
   """
   Makes random data of the specified length.
-
   length: Length of random data to make.
   is_binary: Whether or not to make it binary data (non-ASCII).
   """
@@ -191,7 +188,6 @@ def read_from(host, num_lines=-1, stderr=False):
   -------------------
   Reads from a host's STDOUT or STDERR. Times out after a few seconds if
   nothing is read.
-
   host: Host to read from.
   num_lines: Number of lines to read. If -1, reads forever until a timeout.
   returns: The message received.
@@ -216,7 +212,6 @@ def read_segments_from(host):
   Function: read_segments_from
   ----------------------------
   Reads segments sent and received from a host.
-
   host: Host to read from.
   returns: The segments sent and received.
   """
@@ -262,7 +257,6 @@ def read_debug_messages_from(host):
   ---------------------------------
   Reads debug messages used for testing purposes. They include:
     ###teardown### - When connection teardown occurs.
-
   host: Host to read from.
   returns: A list of debug messages read.
   """
@@ -277,7 +271,6 @@ def write_to(host, msg):
   ------------------
   Writes a message to the specified host's STDIN. This should be read in and
   a segment should be created and sent.
-
   host: Host to write to.
   msg: Message to write.
   """
@@ -469,10 +462,11 @@ def large_data():
   client_port, server_port = choose_ports()
   server = start_server(port=server_port)
   client = start_client(server_port=server_port, port=client_port)
-
+  
   write_to(client, test_str)
   time.sleep(TEST_TIMEOUT)
   result = read_from(server)
+  #print 'SERVER', result
   return result == test_str
 
 
@@ -758,7 +752,6 @@ def parse_args():
   Function: parse_args
   --------------------
   Parse the tester arguments.
-
   Returns: List of test numbers to run.
   """
   global run_lab2

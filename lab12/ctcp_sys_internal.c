@@ -1152,9 +1152,7 @@ void do_loop() {
     memset(buf, 0, MAX_PACKET_SIZE);
     poll(events, NUM_POLL + num_connected,
          need_timer_in(&last_timeout, ctcp_cfg->timer));
-  #ifdef DEBUG_PRINT
-  fprintf(stderr, "%d - %s\n", __LINE__,__func__);
-  #endif
+
     /* Input from stdin. Server will only send to most-recently connected
        client. */
     if (!run_program && events[STDIN_FILENO].revents & POLLIN) {
@@ -1162,12 +1160,18 @@ void do_loop() {
 
       if (conn != NULL)
         ctcp_read(conn->state);
+      // #ifdef DEBUG_PRINT2
+      // fprintf(stderr, "%d - %s\n", __LINE__,__func__);
+      // #endif
     }
 
     /* See if we can output more. */
     if (events[STDOUT_FILENO].revents & (POLLOUT | POLLHUP | POLLERR)) {
       for (conn = get_connections(); conn; conn = conn->next) {
         conn_drain(conn);
+        // #ifdef DEBUG_PRINT2
+        // fprintf(stderr, "%d - %s\n", __LINE__,__func__);
+        // #endif
       }
     }
 
@@ -1178,13 +1182,14 @@ void do_loop() {
       while (conn != NULL) {
         if (conn->poll_fd->revents & POLLIN) {
           ctcp_read(conn->state);
+          // #ifdef DEBUG_PRINT2
+          // fprintf(stderr, "%d - %s\n", __LINE__,__func__);
+          // #endif
         }
         conn = conn->next;
       }
     }
-  #ifdef DEBUG_PRINT
-  fprintf(stderr, "%d - %s\n", __LINE__,__func__);
-  #endif
+
     /* Receive packet on socket from other hosts. Ignore packets if they are
        not large enough or not for us. */
     if (events[2].revents & POLLIN) {
@@ -1212,11 +1217,12 @@ void do_loop() {
                           segment, len, false, unix_socket);
             }
             ctcp_receive(conn->state, segment, len);
+            // #ifdef DEBUG_PRINT2
+            // fprintf(stderr, "%d - %s\n", __LINE__,__func__);
+            // #endif
           }
         }
-  #ifdef DEBUG_PRINT
-  fprintf(stderr, "%d - %s\n", __LINE__,__func__);
-  #endif
+
         /* New connection. */
         else if (tcp_hdr->th_flags & TH_SYN) {
           conn_t *conn = tcp_new_connection(buf);
@@ -1228,14 +1234,13 @@ void do_loop() {
         }
       }
     }
+
     /* Check if timer is up. */
     if (need_timer_in(&last_timeout, ctcp_cfg->timer) == 0) {
       ctcp_timer();
       get_time(&last_timeout);
     }
-  #ifdef DEBUG_PRINT
-  fprintf(stderr, "%d - %s\n", __LINE__,__func__);
-  #endif
+
     /* Delete connections if needed. */
     delete_all_connections();
   }
