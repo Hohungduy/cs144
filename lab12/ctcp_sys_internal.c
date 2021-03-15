@@ -1160,18 +1160,18 @@ void do_loop() {
 
       if (conn != NULL)
         ctcp_read(conn->state);
-      // #ifdef DEBUG_PRINT2
-      // fprintf(stderr, "%d - %s\n", __LINE__,__func__);
-      // #endif
+      #ifdef DEBUG_PRINT2
+      fprintf(stderr, "%d - %s\n", __LINE__,__func__);
+      #endif
     }
 
     /* See if we can output more. */
     if (events[STDOUT_FILENO].revents & (POLLOUT | POLLHUP | POLLERR)) {
       for (conn = get_connections(); conn; conn = conn->next) {
         conn_drain(conn);
-        // #ifdef DEBUG_PRINT2
-        // fprintf(stderr, "%d - %s\n", __LINE__,__func__);
-        // #endif
+        #ifdef DEBUG_PRINT2
+        fprintf(stderr, "%d - %s\n", __LINE__,__func__);
+        #endif
       }
     }
 
@@ -1182,9 +1182,9 @@ void do_loop() {
       while (conn != NULL) {
         if (conn->poll_fd->revents & POLLIN) {
           ctcp_read(conn->state);
-          // #ifdef DEBUG_PRINT2
-          // fprintf(stderr, "%d - %s\n", __LINE__,__func__);
-          // #endif
+          #ifdef DEBUG_PRINT2
+          fprintf(stderr, "%d - %s\n", __LINE__,__func__);
+          #endif
         }
         conn = conn->next;
       }
@@ -1217,9 +1217,9 @@ void do_loop() {
                           segment, len, false, unix_socket);
             }
             ctcp_receive(conn->state, segment, len);
-            // #ifdef DEBUG_PRINT2
-            // fprintf(stderr, "%d - %s\n", __LINE__,__func__);
-            // #endif
+            #ifdef DEBUG_PRINT2
+            fprintf(stderr, "%d - %s\n", __LINE__,__func__);
+            #endif
           }
         }
 
