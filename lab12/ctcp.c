@@ -175,7 +175,7 @@ void ctcp_destroy(ctcp_state_t *state) {
     if(current_node->object)
       free(current_node->object);
     next_node = current_node->next; // may be use list->head instead
-    // ll_remove(list,current_node);
+    ll_remove(list,current_node);
   }
   ll_destroy(list);
 
@@ -194,7 +194,7 @@ void ctcp_destroy(ctcp_state_t *state) {
     if(current_node->object)
       free(current_node->object);
     next_node = current_node->next; // may be use list->head instead
-    // ll_remove(list,current_node);
+    ll_remove(list,current_node);
   }
   ll_destroy(list);
 
@@ -250,6 +250,7 @@ void ctcp_read(ctcp_state_t *state) {
     new_send_segment->retransmit_segment = 0;
     /* init sequence number */
     new_send_segment->segment.seqno = htonl(state->tx_state.last_seqno_read + 1);
+    // new_send_segment->segment.flags = TH_ACK; /* fix correct header , BUG: 7->10, 12*/
     /* init length */
     new_send_segment->segment.len = htons((uint16_t)(sizeof(ctcp_segment_t) + (int16_t)byte_read)); //2 bytes
     #ifdef DEBUG_PRINT2
@@ -266,8 +267,8 @@ void ctcp_read(ctcp_state_t *state) {
   /* Reading an EOF -> send FIN to the other side*/
   if(-1 == byte_read)
   {
-    #ifdef DEBUG_PRINT
-    fprintf(stderr, "%d - %s\n", __LINE__,__func__);
+    #ifdef DEBUG_PRINT2
+    fprintf(stderr, "%d - %s - byte_read:%d \n", __LINE__,__func__, (int32_t)byte_read);
     #endif
     state->tx_state.read_EOF = true;
     /* Create FIN segment*/
@@ -278,7 +279,7 @@ void ctcp_read(ctcp_state_t *state) {
     new_send_segment->segment.len = htons((uint16_t)(sizeof(ctcp_segment_t)));
     /* init seq_number */
     new_send_segment->segment.seqno = htonl(state->tx_state.last_seqno_read + 1);
-    new_send_segment->segment.flags |= TH_FIN;
+    // new_send_segment->segment.flags = TH_FIN | TH_ACK; /* fix correct header , BUG: 7->10, 12*/
     /* update pointer to the last byte read (assume 1 byte data) */
     state->tx_state.last_seqno_read += 1;
     /* Adding this new send segment into linked list */
@@ -362,6 +363,7 @@ void ctcp_send_multiple_segment(ctcp_state_t *state) {
       send_segment->retransmit_segment = 0;
       send_segment->segment.ackno = htonl(state->rx_state.last_seqno_rep_acked + 1);
       send_segment->segment.window = htons(state->ctcp_cfg.recv_window);
+      // send_segment->segment.flags |= TH_ACK; /* fix correct header , BUG: 7->10, 12*/
       send_segment->segment.cksum = 0;
       send_segment->segment.cksum = cksum(&send_segment->segment,ntohs(send_segment->segment.len));
       send_segment->time_lastsegment_sent = (int)current_time();
@@ -399,6 +401,7 @@ void ctcp_send_multiple_segment(ctcp_state_t *state) {
       /* set up sending segment */
       send_segment->segment.window = htons(state->ctcp_cfg.recv_window);
       send_segment->segment.ackno = htonl(state->rx_state.last_seqno_rep_acked + 1);
+      // send_segment->segment.flags |= TH_ACK;
       send_segment->segment.cksum = 0;
       send_segment->segment.cksum = cksum(&send_segment->segment,ntohs(send_segment->segment.len));
       send_segment->time_lastsegment_sent = 0;
@@ -443,7 +446,8 @@ int ctcp_send_segment(ctcp_state_t *state, ctcp_sending_segment_t *sending_segme
       #ifdef DEBUG_PRINT
       fprintf(stderr,"%d - %s: conn_send() failed\n",__LINE__,__func__);
       #endif
-      ctcp_destroy(state);
+      if(state)
+        ctcp_destroy(state);
       return -1;
       // exit(EXIT_FAILURE);
     }
@@ -589,8 +593,8 @@ void ctcp_receive(ctcp_state_t *state, ctcp_segment_t *segment, size_t len) {
     send_segment = (ctcp_sending_segment_t *)(current_node->object);
     /* Remove tx_segments have been acked */
     for(current_node = ll_front(send_list); ntohl(send_segment->segment.seqno) < rcv_segment_ackno; current_node = next_node ){
-      state->tx_state.last_seqno_acked += (uint32_t)(ntohs(send_segment->segment.len) - (uint16_t)sizeof(ctcp_segment_t));
       next_node = current_node->next;
+      state->tx_state.last_seqno_acked += (uint32_t)(ntohs(send_segment->segment.len) - (uint16_t)sizeof(ctcp_segment_t));
       if(send_segment)
         free(send_segment);
       ll_remove(send_list, current_node);
@@ -674,6 +678,9 @@ void ctcp_receive(ctcp_state_t *state, ctcp_segment_t *segment, size_t len) {
     if((datalen) == 0)
     {
       /* Only ACK, no data */
+
+      if(segment)
+        free(segment);
       return;
     }
     /* Piggybagged: Having data (rcv_segment_len =ntohs(segment->len)) */
@@ -727,7 +734,7 @@ data_process:
       #endif
       //discard segment because first segment has the seqno = state->rx_state.last_seqno_rep_acked + 1, the first segment is similar to the receiving segment
       if(segment)
-       free(segment);/*duplicate data, discard this segment */
+        free(segment);/*duplicate data, discard this segment */
       return;
     }
     else
@@ -758,17 +765,29 @@ data_process:
         return;
       }
       else{
-        #ifdef DEBUG_PRINT2
-        fprintf(stderr, "%d - %s\n", __LINE__,__func__);
-        #endif
-        current_node = current_node->prev;
-        ll_add_after(receive_list, current_node, segment);
+        if(current_node == first_node)
+        {
+          #ifdef DEBUG_PRINT2
+          fprintf(stderr, "%d - %s\n", __LINE__,__func__);
+          #endif
+          ll_add_front(receive_list, segment);
+          state->ctcp_cfg.recv_window -= datalen;
+          goto end;
+        }
+        else{
+          #ifdef DEBUG_PRINT2
+          fprintf(stderr, "%d - %s\n", __LINE__,__func__);
+          #endif
+          current_node = current_node->prev;
+          ll_add_after(receive_list, current_node, segment);
+          state->ctcp_cfg.recv_window -= datalen;
+          goto end;
+        }
       }
     }
     /* Update last_seqno_rep_acked in receiving list -> ackno used in sending segment will use this value*/
     // state->rx_state.last_seqno_rep_acked += datalen;
     /* Update receive window */
-    state->ctcp_cfg.recv_window -= datalen;
 
     // if((rcv_segment_flag & TH_ACK) || ((rcv_segment_flag & TH_FIN)&&(rcv_segment_flag & TH_ACK)))
     // {
@@ -780,7 +799,6 @@ data_process:
     // /* Adding ACK into  Sending list */
     // ll_add(state->tx_state.tx_segment, ACK_segment);
     // ctcp_send_multiple_segment(state);
-    goto end;
   }
   else
   {
@@ -809,15 +827,27 @@ data_process:
     }
     else
     {
-      #ifdef DEBUG_PRINT2
-      fprintf(stderr, "%d - %s\n", __LINE__,__func__);
-      #endif
+      if(current_node == first_node)
+      {
+        #ifdef DEBUG_PRINT2
+        fprintf(stderr, "%d - %s\n", __LINE__,__func__);
+        #endif
+        ll_add_front(receive_list, segment);
+        /* Update receive window */
+        state->ctcp_cfg.recv_window -= datalen;
+        goto end;
+      }
+      else{
+        #ifdef DEBUG_PRINT2
+        fprintf(stderr, "%d - %s\n", __LINE__,__func__);
+        #endif
+      }
       current_node = current_node->prev;
       ll_add_after(receive_list, current_node, segment);
+      /* Update receive window */
+      state->ctcp_cfg.recv_window -= datalen;
     }
-    /* Update receive window */
-    state->ctcp_cfg.recv_window -= datalen;
-    return;
+    // return;
   }
 end:
   ctcp_output(state);
@@ -832,6 +862,7 @@ void ctcp_output(ctcp_state_t *state) {
   int32_t byte_output;// same as int (singed)
   int num_segments_output = 0;
 
+  // ctcp_sending_segment_t *final_FIN_segment = NULL;
   if (state == NULL)
     return;
 
@@ -874,7 +905,8 @@ void ctcp_output(ctcp_state_t *state) {
         #ifdef DEBUG_PRINT
         fprintf(stderr, "conn_output() returned -1\n");
         #endif
-        ctcp_destroy(state);
+        if(state)
+          ctcp_destroy(state);
         return;
       }
       assert(byte_output == datalen);
@@ -891,16 +923,36 @@ void ctcp_output(ctcp_state_t *state) {
     */
     if (state->rx_state.receive_FIN_seg) 
     {
-      #ifdef DEBUG_PRINT
+      #ifdef DEBUG_PRINT2
       fprintf(stderr, "received FIN, incrementing state->rx_state.last_seqno_rep_acked\n");
       #endif
       state->rx_state.last_seqno_rep_acked++;
       conn_output(state->conn, segment_ptr->data, 0);
       num_segments_output++;
+      // if(!state->tx_state.send_FIN_acked)
+      // {
+      //   //have not yet send FIN to the initial side who wants to terminate this connection
+      //   #ifdef DEBUG_PRINT2
+      //   fprintf(stderr, "%d - %s\n", __LINE__,__func__);
+      //   #endif
+      //   /* Create FIN segment*/
+      //   final_FIN_segment = (ctcp_sending_segment_t *)calloc(1, sizeof(ctcp_sending_segment_t));
+      //   /* init retransmit segment */
+      //   final_FIN_segment->retransmit_segment = 0;
+      //   /* init length */
+      //   final_FIN_segment->segment.len = htons((uint16_t)(sizeof(ctcp_segment_t)));
+      //   /* init seq_number */
+      //   final_FIN_segment->segment.seqno = htonl(state->tx_state.last_seqno_read + 1);
+      //   final_FIN_segment->segment.flags |= TH_FIN;
+      //   /* update pointer to the last byte read (assume 1 byte data) */
+      //   // state->tx_state.last_seqno_read += 1;
+      //   /* Adding this new send segment into linked list */
+      //   ll_add(state->tx_state.tx_segment, final_FIN_segment);
+      // }
     }
     /* remove it from the linked list after successfully output*/
     if(segment_ptr)
-      free(segment_ptr); /*bad using */
+      free(segment_ptr); 
     ll_remove(state->rx_state.rx_segment, first_node);
   }
 end:
@@ -910,6 +962,16 @@ end:
     // sender until buffer space is available.
     ctcp_send_ACK_segment(state);
   }
+  // ctcp_send_multiple_segment(state);
+  // if((state->tx_state.send_FIN_acked || state->tx_state.read_EOF) 
+  // && (state->rx_state.receive_FIN_seg) && (ll_length(state->tx_state.tx_segment) == 0) && (ll_length(state->rx_state.rx_segment) == 0))
+  // {
+  //   #ifdef DEBUG_PRINT2
+  //   fprintf(stderr,"%d - %s: Destroy connection\n",__LINE__, __func__);
+  //   #endif
+  //   if(state)
+  //     ctcp_destroy(state);
+  // }
   return;
 
 }
@@ -940,14 +1002,16 @@ void ctcp_timer() {
     sending_list = current_state->tx_state.tx_segment;/* sending list */
     receiving_list = current_state->rx_state.rx_segment;/* receiving list */
     /* Work with tear down */
-    ctcp_output(current_state);
-    #ifdef DEBUG_PRINT2
-     fprintf(stderr, "%d - %s\n", __LINE__,__func__);
-    #endif
     ctcp_read(current_state);
-    #ifdef DEBUG_PRINT2
-     fprintf(stderr, "%d - %s\n", __LINE__,__func__);
-    #endif
+    // #ifdef DEBUG_PRINT2
+    //  fprintf(stderr, "%d - %s\n", __LINE__,__func__);
+    // #endif
+    ctcp_output(current_state);
+    // if (state_list == NULL) return;
+    // if (current_state == NULL) return;
+    // #ifdef DEBUG_PRINT2
+    //  fprintf(stderr, "%d - %s\n", __LINE__,__func__);
+    // #endif
 
     /**
     * Destroys connection state for a connection. You should call this when all of
@@ -961,8 +1025,17 @@ void ctcp_timer() {
     *    - The other side is unresponsive (after retransmitting the same segment 5
     *      times and still receiving no response).
     */
-    if((current_state->tx_state.send_FIN_acked && current_state->tx_state.read_EOF) 
+    if((current_state->tx_state.send_FIN_acked || current_state->tx_state.read_EOF) 
     && (current_state->rx_state.receive_FIN_seg) && (ll_length(sending_list) == 0) && (ll_length(receiving_list) == 0))
+    // {
+    //   #ifdef DEBUG_PRINT2
+    //   fprintf(stderr,"%d - %s: Destroy connection\n",__LINE__, __func__);
+    //   #endif
+    //   if(current_state)
+    //     ctcp_destroy(current_state);
+    // }
+    // if((current_state->tx_state.send_FIN_acked || current_state->tx_state.read_EOF) 
+    // && (current_state->rx_state.receive_FIN_seg) && (ll_length(sending_list) != 0) && (ll_length(receiving_list) == 0))
     {
         /* Checking some condition related to the termination of connection */
         #ifdef DEBUG_PRINT
@@ -977,7 +1050,8 @@ void ctcp_timer() {
           #ifdef DEBUG_PRINT2
           fprintf(stderr,"%d - %s: Destroy connection\n",__LINE__, __func__);
           #endif
-          ctcp_destroy(current_state);
+          if(current_state)
+            ctcp_destroy(current_state);
           return;
         }
     }
@@ -1014,7 +1088,8 @@ void ctcp_timer() {
         #ifdef DEBUG_PRINT2
         fprintf(stderr,"%d - %s: destroy connection (retransmit_segment > 5)\n",__LINE__, __func__);
         #endif
-        ctcp_destroy(current_state);
+        if(current_state)
+          ctcp_destroy(current_state);
         return;
       }
 nextnode:

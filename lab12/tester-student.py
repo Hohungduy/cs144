@@ -200,14 +200,21 @@ def read_from(host, num_lines=-1, stderr=False):
   msg = ""
   try:
     with timeout(seconds=TEST_TIMEOUT):
+      # print "\ndebug0\n"
       while num_lines <= -1 or num_lines > 0:
+        # print "\ndebug0-w1\n"
         prev_msg = msg
+        # print "\ndebug0-w2\n"
         host.stdout.flush()
+        # print "\ndebug0-w3\n"
         msg += host.stderr.readline() if stderr else host.stdout.readline()
+        # print "\ndebug0-w4\n"
         num_lines -= 1
+        # print "\ndebug1\n"
   except TimeoutError:
+    # print "\ndebug2\n"
     return msg
-
+  # print "\ndebug3\n"
   return msg
 
 
@@ -522,14 +529,17 @@ def segment_truncated():
   write_to(client, test_str)
   time.sleep(TEST_TIMEOUT)
   if read_from(server, num_lines=1) != test_str:
+    print "send full message failed!\n"
     return False
+  print "send full message passed!\n"
 
   # Write the truncated segment. Nothing should be read from the server.
   write_to(client, truncated_str)
   time.sleep(TEST_TIMEOUT)
   if read_from(server, num_lines=1) == truncated_str:
+    print "discard truncated message failed!\n "
     return False
-
+  print "discard truncated message passed!\n "
   return True
 
 

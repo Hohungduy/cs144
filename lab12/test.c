@@ -34,9 +34,11 @@ int main() {
     memset(buf, 0, 1000);
 
     /* Read input. */
-    int r = read(0, buf, 1000);
+    int r = read(1, buf, 1000);
     if (r > 0)
-      fprintf(stderr, "Got: %s\n", buf);
+      fprintf(stderr, "Server: Got: %s\n", buf);
+      fprintf(stdout, "Server: Got: %s\n", buf);
+
   }
   return 0;
 }
