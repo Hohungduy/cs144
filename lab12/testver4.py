@@ -466,6 +466,7 @@ def large_data():
   Sends data twice + 1 the window size. It should all be received properly.
   """
   test_str = make_random(MAX_SEG_DATA_SIZE * 2 + 1)
+  print(test_str)
   client_port, server_port = choose_ports()
   server = start_server(port=server_port)
   client = start_client(server_port=server_port, port=client_port)
@@ -473,6 +474,7 @@ def large_data():
   write_to(client, test_str)
   time.sleep(TEST_TIMEOUT)
   result = read_from(server)
+  print(result)
   return result == test_str
 
 

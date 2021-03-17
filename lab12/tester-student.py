@@ -406,7 +406,7 @@ def correct_header_fields():
   if not segments:
     return False
   teardown()
-
+  
   # Start reference solution to get answers.
   ref_client_port, ref_server_port = choose_ports()
   ref_server = start_server(port=ref_server_port, reference=True)
@@ -473,6 +473,9 @@ def large_data():
   Sends data twice + 1 the window size. It should all be received properly.
   """
   test_str = make_random(MAX_SEG_DATA_SIZE * 2 + 1)
+  # print("test_str\n")
+  # print(test_str)
+  # print("\n\n\n")
   client_port, server_port = choose_ports()
   server = start_server(port=server_port)
   client = start_client(server_port=server_port, port=client_port)
@@ -480,6 +483,9 @@ def large_data():
   write_to(client, test_str)
   time.sleep(TEST_TIMEOUT)
   result = read_from(server)
+  # print("test_str\n")
+  # print(result)
+  # print("\n\n\n")
   return result == test_str
 
 
@@ -529,17 +535,17 @@ def segment_truncated():
   write_to(client, test_str)
   time.sleep(TEST_TIMEOUT)
   if read_from(server, num_lines=1) != test_str:
-    print "send full message failed!\n"
+    # print "send full message failed!\n"
     return False
-  print "send full message passed!\n"
+  # print "send full message passed!\n"
 
   # Write the truncated segment. Nothing should be read from the server.
   write_to(client, truncated_str)
   time.sleep(TEST_TIMEOUT)
   if read_from(server, num_lines=1) == truncated_str:
-    print "discard truncated message failed!\n "
+    # print "discard truncated message failed!\n "
     return False
-  print "discard truncated message passed!\n "
+  # print "discard truncated message passed!\n "
   return True
 
 
@@ -609,6 +615,9 @@ def larger_windows():
   stop_str = DEBUG_STOP + "1t'5 h4mm3r t1m3!!!!!!!!\n"
   large_strs = [make_random(596) for _ in range(20)]
 
+  # print("\nlarge_strs\n")
+  # print(large_strs)
+  # print("\n\n\n")
   client_port, server_port = choose_ports()
   server = start_server(port=server_port, reference=True, flags=["-w", str(4)])
   client = start_client(server_port=server_port, port=client_port,
@@ -617,19 +626,34 @@ def larger_windows():
 
   # Stop the server from processing anything.
   write_to(client, large_strs[0])
+
+  # print("\nlarge_strs[0]\n")
+  # print(large_strs[0])
+  # print("\n\n\n")
+
   read_segments_from(client)
   write_to(client, stop_str)
   server_segments = read_segments_from(server)
+
+  # print("\nserver_segments\n")
+  # print(server_segments)
+  # print("\n\n\n")
+
   if not server_segments:
     return False
 
   # Get the last ackno from server.
   last_ackno = server_segments[-1].ackno
-
+  # print("\nlast_ackno\n")
+  # print(last_ackno)
+  # print("\n\n\n")
   # Have the client send a lot of data. See if it sends up to the window size.
   for large_str in large_strs:
     write_to(client, large_str)
   segments = read_segments_from(server)
+  # print("\nserver_segments\n")
+  # print(server_segments)
+  # print("\n\n\n")
   if not segments:
     return False
 
@@ -637,12 +661,23 @@ def larger_windows():
   segments = [s for s in segments if s.source_port == int(client_port)]
   if len(segments) == 0:
     return False
-
+  # print(len(segments))
+  # print "passed len"
   # Get the largest segment sent.
   largest_seg = max(segments, key=lambda s: s.seqno)
   passed = largest_seg.seqno <= last_ackno + 4 * MAX_SEG_DATA_SIZE and \
            largest_seg.seqno >= last_ackno + 3 * MAX_SEG_DATA_SIZE
   sliding_window_passed = passed
+  # print("largest seqno:\n")
+  # print(largest_seg.seqno)
+  # print("\n") 
+  # print("last_ackno + 4 * MAX_SEG_DATA_SIZE:\n")
+  # print(last_ackno + 4 * MAX_SEG_DATA_SIZE)
+  # print("\n") 
+  # print("last_ackno + 3 * MAX_SEG_DATA_SIZE:\n")
+  # print(last_ackno + 3 * MAX_SEG_DATA_SIZE)
+  # print("\n") 
+  # print(sliding_window_passed)
   return passed
 
 

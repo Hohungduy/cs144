@@ -27,7 +27,7 @@
  * if not all the segments are of the full MAX_SEG_DATA_SIZE in size.
  */
 #define MAX_SEG_DATA_SIZE 1440
-
+// #define MAX_SEG_DATA_SIZE 5
 /* Normally 60s */
 #define MAX_SEG_LIFETIME 60000
 /**
