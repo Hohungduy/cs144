@@ -4,4 +4,7 @@
 *.swo
 *.swp
 *.pyc
+*.d
 lab12/ctcp
+lab12/test
+lab3/router/sr
