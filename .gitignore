@@ -5,6 +5,7 @@
 *.swp
 *.pyc
 *.d
+*.pcap
 lab12/ctcp
 lab12/test
 lab3/router/sr
