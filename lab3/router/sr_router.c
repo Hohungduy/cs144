@@ -13,8 +13,6 @@
 
 #include <stdio.h>
 #include <assert.h>
-
-
 #include "sr_if.h"
 #include "sr_rt.h"
 #include "sr_router.h"
@@ -66,6 +64,17 @@ void sr_init(struct sr_instance* sr)
  *
  *---------------------------------------------------------------------*/
 
+/*
+  Pseudocode
+  # When sending packet to next_hop_ip
+   entry = arpcache_lookup(next_hop_ip)
+   if entry:
+       use next_hop_ip->mac mapping in entry to send the packet
+       free entry
+   else:
+       req = arpcache_queuereq(next_hop_ip, packet, len)
+       handle_arpreq(req)
+*/
 void sr_handlepacket(struct sr_instance* sr,
         uint8_t * packet/* lent */,
         unsigned int len,

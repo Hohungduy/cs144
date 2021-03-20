@@ -1,9 +1,15 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/time.h>
 #include "sr_protocol.h"
 #include "sr_utils.h"
 
+long current_time() {
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return tv.tv_sec * 1000 + tv.tv_usec / 1000;
+}
 
 uint16_t cksum (const void *_data, int len) {
   const uint8_t *data = _data;
