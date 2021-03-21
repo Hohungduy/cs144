@@ -169,7 +169,9 @@ enum sr_arp_hrd_fmt {
   arp_hrd_ethernet = 0x0001,
 };
 
-
+enum sr_arp_pro {
+  arp_pro_addr = 0x0800,
+};
 struct sr_arp_hdr
 {
     unsigned short  ar_hrd;             /* format of hardware address   */

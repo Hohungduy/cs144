@@ -36,6 +36,15 @@ uint8_t ip_protocol(uint8_t *buf) {
   return iphdr->ip_p;
 }
 
+uint16_t ip_checksum(uint8_t *buf){
+  sr_ip_hdr_t *iphdr = (sr_ip_hdr_t *)buf;
+  return iphdr->ip_sum;
+}
+
+uint16_t icmp_checksum(uint8_t *buf){
+  sr_icmp_hdr_t *icmp_hdr = (sr_icmp_hdr_t *)buf;
+  return icmp_hdr->icmp_sum;
+}
 
 /* Prints out formatted Ethernet address, e.g. 00:11:22:33:44:55 */
 void print_addr_eth(uint8_t *addr) {

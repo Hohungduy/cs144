@@ -176,3 +176,27 @@ void sr_print_routing_entry(struct sr_rt* entry)
     printf("%s\n",entry->interface);
 
 } /* -- sr_print_routing_entry -- */
+
+/* This is just simple LPM */
+sr_rt_tt* sr_longest_prefix_match(struct sr_instance* sr, uint32_t des_ip)
+{
+    sr_rt_tt *current_entry = sr->routing_table;
+    sr_rt_tt *next_entry = NULL;
+    sr_rt_tt *match_entry = NULL;
+    unsigned int max = 0;
+    if(current_entry == NULL)
+        return;
+    /* init first ip */
+
+    for(;current_entry != NULL; current_entry = next_entry)
+    {
+        next_entry = current_entry->next;
+        if((ntohl(current_entry->dest.s_addr) & (current_entry->mask.s_addr)) == (ntohl(current_entry->dest.s_addr) & (current_entry->mask.s_addr)) 
+        && (max <= (current_entry->mask.s_addr)))
+        {
+            max = current_entry->mask.s_addr;
+            match_entry = current_entry;
+        }
+    }
+    return match_entry;
+}

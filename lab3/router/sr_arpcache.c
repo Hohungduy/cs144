@@ -10,26 +10,32 @@
 #include "sr_router.h"
 #include "sr_if.h"
 #include "sr_protocol.h"
+#include "sr_utils.h"
 
 void send_reply_host_unreachable(struct sr_instance *sr, struct sr_arpreq *req)
 {
-    struct sr_icmp_t3_hdr *icmp_hdr = (struct sr_icmp_t3_hdr *)calloc(1, sizeof(struct sr_icmp_t3_hdr));
+    sr_ethernet_hdr_t *ether_hdr = NULL;
+    sr_ip_hdr_t *ip_hdr = NULL;
+    unsigned int len = 0;
+    char *iface = NULL;
+    uint32_t dst_ip = 0; /* destination ip address */
     struct sr_packet *current_packet = NULL, *next_packet = NULL;
-    icmp_hdr->icmp_type = 3;// 1 byte: no need to use ntohs
-    icmp_hdr->icmp_code = 1;
-    icmp_hdr->icmp_sum = 0;// set 0 first
+    int ret = 0;
+
     if(req->packets ==  NULL)
         return;
     for(current_packet = req->packets; current_packet != NULL; current_packet = next_packet)
     {
         next_packet = current_packet->next;
-        memcpy(icmp_hdr->data,buf,ICMP_DATA_SIZE);
-        icmp_hdr->icmp_sum = cksum(icmp_hdr,sizeof(struct sr_icmp_t3_hdr));
-        send_icmp_error_notify(
-            
-        )
+        ether_hdr = (sr_ethernet_hdr_t *)(current_packet->buf);
+        ip_hdr = (sr_ip_hdr_t *)(current_packet->buf + sizeof(sr_ethernet_hdr_t));
+        len = current_packet->len;
+        iface = current_packet->iface;
+        dst_ip = ip_hdr->ip_src;/* reply to the source address that requested */
+        ret = send_icmp_error_notify(sr, ether_hdr, ip_hdr, dst_ip, HOST_UNREACHABLE); /* free after using */
+        if(-1 == ret)
+            return;
     }
-    
 }
 /*
   Handle sending ARP requests if necessary:
@@ -45,19 +51,19 @@ void send_reply_host_unreachable(struct sr_instance *sr, struct sr_arpreq *req)
                req->sent = now
                req->times_sent++
 */
-void sr_handle_arpeq(struct sr_instance *sr, struct sr_arpreq *req){
+void sr_handle_arp_req(struct sr_instance *sr, struct sr_arpreq *req){
     time_t current_time = time(NULL);
-    struct sr_cache *cache = (struct sr_arpcache *)&sr->cache;
+    struct sr_arpcache *cache = (struct sr_arpcache *)&sr->cache;
     if (difftime(current_time, req->sent) >= 1.0)
     {
         if(req->times_sent >= 5)
         {
             #ifdef DEBUG_PRINT
-            fprint(stderr,"[%d]:%s: Cannot find MAC address matching with the IP address \
+            fprintf(stderr,"[%d]:%s: Cannot find MAC address matching with the IP address \
             below (after 5 time sent)\n",__LINE__, __func__);
             print_addr_ip_int(req->ip);
             #endif
-            send_reply_host_unrechable(sr, req);// send all packets related to this requests
+            send_reply_host_unreachable(sr, req);// send all packets related to this requests
             sr_arpreq_destroy(cache,req);
         }
         else{
@@ -79,7 +85,7 @@ void sr_handle_arpeq(struct sr_instance *sr, struct sr_arpreq *req){
        send all packets on the req->packets linked list
        arpreq_destroy(req)
 */
-void sr_handle_arpreply(struct sr_instance *sr, unsigned char *mac, uint32_t ip)
+void sr_handle_arp_reply(struct sr_instance *sr, unsigned char *mac, uint32_t ip)
 {
     struct sr_arpreq *req =  NULL;
     struct sr_packet *current_packet = NULL, *next_packet = NULL;
@@ -118,7 +124,7 @@ void sr_arpcache_sweepreqs(struct sr_instance *sr) {
     for(current_req = cache.requests; current_req != NULL; current_req = next_req)
     {
         next_req = current_req->next;
-        sr_handle_arpreq(sr, current_req);
+        sr_handle_arp_req(sr, current_req);
     }
 }
 
@@ -177,6 +183,8 @@ struct sr_arpreq *sr_arpcache_queuereq(struct sr_arpcache *cache,
         req->ip = ip;
         req->next = cache->requests;
         cache->requests = req;
+        //init some fields in req
+        req->times_sent = 0;
     }
     
     /* Add the packet to the list of packets for this request */

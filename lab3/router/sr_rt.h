@@ -44,6 +44,6 @@ void sr_add_rt_entry(struct sr_instance*, struct in_addr,struct in_addr,
                   struct in_addr, char*);
 void sr_print_routing_table(struct sr_instance* sr);
 void sr_print_routing_entry(struct sr_rt* entry);
-
+sr_rt_tt *sr_longest_prefix_match(struct sr_instance *sr, uint32_t des_ip);
 
 #endif  /* --  sr_RT_H -- */
