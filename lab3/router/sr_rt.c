@@ -185,7 +185,6 @@ sr_rt_tt* sr_longest_prefix_match(struct sr_instance* sr, uint32_t des_ip)
     sr_rt_tt *next_entry = NULL;
     sr_rt_tt *match_entry = NULL;
     unsigned int max = 0;
-        printf("[%d]: %s: Failed! \n", __LINE__, __func__);
     if(current_entry == NULL)
         return current_entry;
     /* init first ip */
@@ -196,10 +195,12 @@ sr_rt_tt* sr_longest_prefix_match(struct sr_instance* sr, uint32_t des_ip)
         next_entry = current_entry->next;
         if(((ntohl(current_entry->dest.s_addr) & ntohl(current_entry->mask.s_addr)) == (ntohl(des_ip))) && (max <= (current_entry->mask.s_addr)))
         {
+            #ifdef DEBUG_PRINT
             printf("curent entry ip address:\n");
             print_addr_ip_int(ntohl(current_entry->dest.s_addr) & ntohl(current_entry->mask.s_addr));
             printf("destination ip address:\n");
             print_addr_ip_int(ntohl(des_ip));
+            #endif
             max = current_entry->mask.s_addr;
             match_entry = current_entry;
         }

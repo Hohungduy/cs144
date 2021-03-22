@@ -68,7 +68,7 @@ void sr_handle_arp_req(struct sr_instance *sr, struct sr_arpreq *req){
         {
             #ifdef DEBUG_PRINT
             fprintf(stderr,"[%d]:%s: Cannot find MAC address matching with the IP address \
-            below (after 5 time sent)\n",__LINE__, __func__);
+                        below (after 5 time sent)\n",__LINE__, __func__);
             print_addr_ip_int(ntohl(req->ip));
             #endif
             send_reply_host_unreachable(sr, req);// send all packets related to this requests
@@ -131,8 +131,6 @@ void sr_handle_arp_reply(struct sr_instance *sr, unsigned char *dst_mac, unsigne
     for(current_packet = req->packets; current_packet != NULL; current_packet = next_packet)
     {
         next_packet = current_packet->next;
-        printf("iface:%s\n", iface);
-        printf("current_packet:%s\n",current_packet->iface);
         ether_hdr = (sr_ethernet_hdr_t *)(current_packet->buf);
         memset(ether_hdr->ether_dhost, 0, ETHER_ADDR_LEN);
         memcpy(ether_hdr->ether_dhost, dst_mac, ETHER_ADDR_LEN);
