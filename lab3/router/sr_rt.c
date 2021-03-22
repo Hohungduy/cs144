@@ -21,6 +21,7 @@
 
 #include "sr_rt.h"
 #include "sr_router.h"
+#include "sr_utils.h"
 
 /*---------------------------------------------------------------------
  * Method:
@@ -177,25 +178,37 @@ void sr_print_routing_entry(struct sr_rt* entry)
 
 } /* -- sr_print_routing_entry -- */
 
-/* This is just simple LPM */
+/* This is just simple LPM , reference method using binary search in lpm: https://github.com/Hohungduy/liblpm.git */
 sr_rt_tt* sr_longest_prefix_match(struct sr_instance* sr, uint32_t des_ip)
 {
     sr_rt_tt *current_entry = sr->routing_table;
     sr_rt_tt *next_entry = NULL;
     sr_rt_tt *match_entry = NULL;
     unsigned int max = 0;
+        printf("[%d]: %s: Failed! \n", __LINE__, __func__);
     if(current_entry == NULL)
-        return;
+        return current_entry;
     /* init first ip */
 
     for(;current_entry != NULL; current_entry = next_entry)
     {
+        printf("[%d]: %s: Failed! \n", __LINE__, __func__);
         next_entry = current_entry->next;
-        if((ntohl(current_entry->dest.s_addr) & (current_entry->mask.s_addr)) == (ntohl(current_entry->dest.s_addr) & (current_entry->mask.s_addr)) 
-        && (max <= (current_entry->mask.s_addr)))
+        if(((ntohl(current_entry->dest.s_addr) & ntohl(current_entry->mask.s_addr)) == (ntohl(des_ip))) && (max <= (current_entry->mask.s_addr)))
         {
+            printf("curent entry ip address:\n");
+            print_addr_ip_int(ntohl(current_entry->dest.s_addr) & ntohl(current_entry->mask.s_addr));
+            printf("destination ip address:\n");
+            print_addr_ip_int(ntohl(des_ip));
             max = current_entry->mask.s_addr;
             match_entry = current_entry;
+        }
+        if(match_entry == NULL)
+        {
+            if(ntohl(des_ip) == ntohl(current_entry->gw.s_addr))
+            {
+                match_entry = current_entry;
+            }
         }
     }
     return match_entry;

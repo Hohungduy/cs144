@@ -78,7 +78,7 @@ void sr_init(struct sr_instance* );
 void sr_handlepacket(struct sr_instance* , uint8_t * , unsigned int , char* );
 int send_icmp_error_notify(struct sr_instance *sr, sr_ethernet_hdr_t *ether_hdr, 
                           sr_ip_hdr_t *ip_hdr, uint32_t des_ip, int TypeCode_icmp);
-int send_icmp_reply(struct sr_instance *sr, char *iface, uint16_t *ip_id, 
+int send_icmp_reply(struct sr_instance *sr, char *iface, uint16_t ip_id, 
                     uint8_t *ether_dhost, uint8_t *ether_shost, 
                     uint32_t dst_ip, uint32_t src_ip, uint8_t *icmp_data, 
                     uint16_t icmp_data_len, int TypeCode_icmp);

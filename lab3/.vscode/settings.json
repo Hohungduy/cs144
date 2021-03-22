@@ -4,6 +4,7 @@
         "sr_protocol.h": "c",
         "sr_arpcache.h": "c",
         "sr_if.h": "c",
-        "limits": "cpp"
+        "limits": "cpp",
+        "sr_rt.h": "c"
     }
 }
