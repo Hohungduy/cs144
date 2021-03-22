@@ -194,7 +194,7 @@ int send_icmp_error_notify(struct sr_instance *sr, sr_ethernet_hdr_t *ether_hdr,
 
     /* Getting routing entry and some info related to this interface (source IP, MAC address) */
     sr_rt_tt *routing_entry = NULL;
-    routing_entry = sr_longest_prefix_match(sr, dst_ip);//dst_ip = source ip of icmp request (doesnt like ip in arp request)
+    routing_entry = sr_longest_prefix_match(sr, htonl(dst_ip));//dst_ip = source ip of icmp request (doesnt like ip in arp request)
     struct sr_if *interface = NULL;
     interface = sr_get_interface(sr, routing_entry->interface);
 
@@ -346,7 +346,7 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
 	memcpy(copy_buf, packet, len);
 	sr_ethernet_hdr_t *eth_hdr = (sr_ethernet_hdr_t *)copy_buf;
 	sr_ip_hdr_t *ip_hdr = (sr_ip_hdr_t *) (copy_buf + sizeof(sr_ethernet_hdr_t));
-
+    printf("TTL: %hu\n", ip_hdr->ip_ttl );
     if(ip_hdr->ip_ttl == 1)
         return TIME_EXCEEDED;
 
