@@ -74,6 +74,7 @@
 #define SR_ARPCACHE_SZ    100  
 #define SR_ARPCACHE_TO    15.0
 
+#define DEBUG_PRINT
 struct sr_packet {
     uint8_t *buf;               /* A raw Ethernet frame, presumably with the dest MAC empty */
     unsigned int len;           /* Length of raw Ethernet frame */
@@ -138,6 +139,18 @@ void sr_arpreq_destroy(struct sr_arpcache *cache, struct sr_arpreq *entry);
 /* Prints out the ARP table. */
 void sr_arpcache_dump(struct sr_arpcache *cache);
 
+/* 
+  This function gets called every second. For each request sent out, we keep
+  checking whether we should resend an request or destroy the arp request.
+  See the comments in the header file for an idea of what it should look like.
+  Pseudocode:
+     void sr_arpcache_sweepreqs(struct sr_instance *sr) {
+       for each request on sr->cache.requests:
+           handle_arpreq(request)
+   }
+*/
+void sr_arpcache_sweepreqs(struct sr_instance *sr);
+
 /* You shouldn't have to call these methods--they're already called in the
    starter code for you. The init call is a constructor, the destroy call is
    a destructor, and a cleanup thread times out cache entries every 15
@@ -146,5 +159,7 @@ void sr_arpcache_dump(struct sr_arpcache *cache);
 int   sr_arpcache_init(struct sr_arpcache *cache);
 int   sr_arpcache_destroy(struct sr_arpcache *cache);
 void *sr_arpcache_timeout(void *cache_ptr);
-
+void send_reply_host_unreachable(struct sr_instance *sr, struct sr_arpreq *req);
+void sr_handle_arp_req(struct sr_instance *sr, struct sr_arpreq *req);
+void sr_handle_arp_reply(struct sr_instance *sr, unsigned char *dst_mac, unsigned char *src_mac, uint32_t ip);
 #endif

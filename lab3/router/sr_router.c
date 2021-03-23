@@ -204,7 +204,7 @@ int send_icmp_error_notify(struct sr_instance *sr, sr_ethernet_hdr_t *ether_hdr,
     sr_icmp_t3_hdr_t *icmp_hdr = create_icmp_type3_header(ip_hdr,TypeCode_icmp);// include data
 
     /* create IP header */
-    sr_ip_hdr_t *ip_icmp_hdr = create_ip_header( htons(ip_hdr->ip_id) + 1, dst_ip, ntohl(interface->ip), TypeCode_icmp, 0); // no datalen
+    sr_ip_hdr_t *ip_icmp_hdr = create_ip_header(ntohs(ip_hdr->ip_id) , dst_ip, ntohl(interface->ip), TypeCode_icmp, 0); // no datalen +1
 
     /* create Ethernet header */
     sr_ethernet_hdr_t *ether_icmp_hdr = create_ethernet_header(ether_hdr->ether_shost, interface->addr, ethertype_ip);
@@ -546,7 +546,7 @@ void sr_handlepacket(struct sr_instance* sr,
 		print_addr_ip_int(ntohl(ip_hdr->ip_src));
 		fprintf(stderr, " Destination IP address: ");
 		print_addr_ip_int(ntohl(ip_hdr->ip_dst));
-		fprintf(stderr, " ID of header: %u\n", htons(ip_hdr->ip_id));
+		fprintf(stderr, " ID of header: %u\n", ntohs(ip_hdr->ip_id));
         #endif
 
         for(current_interface = sr->if_list; current_interface != NULL; current_interface = next_interface)
@@ -577,7 +577,7 @@ void sr_handlepacket(struct sr_instance* sr,
                         return;
                     }
                     printf("*** <- Sent ICMP reply \n");
-                    ret = send_icmp_reply(sr, interface, htons(ip_hdr->ip_id) + 1, ether_hdr->ether_shost, ether_hdr->ether_dhost,
+                    ret = send_icmp_reply(sr, interface, ntohs(ip_hdr->ip_id), ether_hdr->ether_shost, ether_hdr->ether_dhost,
                                         ntohl(ip_hdr->ip_src),ntohl(ip_hdr->ip_dst), icmp_data, icmp_datalen, ECHO_REPLY);
                     if(-1 == ret)
                         fprintf(stderr, "[ERROR]: Sending icmp reply\n");

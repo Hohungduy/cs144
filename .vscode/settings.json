@@ -1,5 +1,6 @@
 {
     "files.associations": {
-        "ctcp_utils.h": "c"
+        "ctcp_utils.h": "c",
+        "sr_rt.h": "c"
     }
 }

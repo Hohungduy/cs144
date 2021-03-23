@@ -10,14 +10,161 @@
 #include "sr_router.h"
 #include "sr_if.h"
 #include "sr_protocol.h"
+#include "sr_utils.h"
+#include "sr_rt.h"
 
+void send_reply_host_unreachable(struct sr_instance *sr, struct sr_arpreq *req)
+{
+    sr_ethernet_hdr_t *ether_hdr = NULL;
+    sr_ip_hdr_t *ip_hdr = NULL;
+    // unsigned int len = 0;
+    // char *iface = NULL;
+    uint32_t dst_ip = 0; /* destination ip address */
+    struct sr_packet *current_packet = NULL, *next_packet = NULL;
+    int ret = 0;
+
+    if(req->packets ==  NULL)
+        return;
+
+    for(current_packet = req->packets; current_packet != NULL; current_packet = next_packet)
+    {
+        next_packet = current_packet->next;
+        ether_hdr = (sr_ethernet_hdr_t *)(current_packet->buf);
+        ip_hdr = (sr_ip_hdr_t *)(current_packet->buf + sizeof(sr_ethernet_hdr_t));
+        // len = current_packet->len;
+        // iface = current_packet->iface;
+        dst_ip = ip_hdr->ip_src;/* reply to the source address that requested */
+        ret = send_icmp_error_notify(sr, ether_hdr, ip_hdr, ntohl(dst_ip), HOST_UNREACHABLE); /* free after using */
+        if(-1 == ret)
+            return;
+    }
+}
+/*
+  Handle sending ARP requests if necessary:
+  Pseudocode for use of these structures follows:
+     function handle_arpreq(req):
+       if difftime(now, req->sent) >= 1.0
+           if req->times_sent >= 5:
+               send icmp host unreachable to source addr of all pkts waiting
+                 on this request
+               arpreq_destroy(req)
+           else:
+               send arp request
+               req->sent = now
+               req->times_sent++
+*/
+void sr_handle_arp_req(struct sr_instance *sr, struct sr_arpreq *req){
+    time_t current_time = time(NULL);
+    struct sr_arpcache *cache = (struct sr_arpcache *)&sr->cache;
+    int ret;
+    uint32_t dst_ip;
+    struct sr_packet * current_packet = NULL, * next_packet = NULL;
+    sr_ethernet_hdr_t *ether_hdr = NULL;
+    sr_ip_hdr_t *ip_hdr = NULL;
+
+    if (difftime(current_time, req->sent) >= 1.0)
+    {
+        if(req->times_sent >= 5)
+        {
+            #ifdef DEBUG_PRINT
+            fprintf(stderr,"[%d]:%s: Cannot find MAC address matching with the IP address \
+                        below (after 5 time sent)\n",__LINE__, __func__);
+            print_addr_ip_int(ntohl(req->ip));
+            #endif
+            send_reply_host_unreachable(sr, req);// send all packets related to this requests
+            sr_arpreq_destroy(cache, req);
+        }
+        else{
+            printf("*** <- Sending ARP request!\n");
+            ret = send_arp_request(sr, req);// find MAC address related to IP address (argument req->ip passed)
+            // MAYBE: USE LPM everytime that we send arp request to increase the possibility of finding the possible interface.
+            if(-1 == ret)
+            {
+                for(current_packet = req->packets; current_packet != NULL; current_packet = next_packet)
+                {
+                    next_packet = current_packet->next;
+                    ether_hdr = (sr_ethernet_hdr_t *)current_packet->buf;
+                    ip_hdr = (sr_ip_hdr_t *)(current_packet->buf + sizeof(sr_ethernet_hdr_t));
+                    dst_ip = ip_hdr->ip_src;
+                    send_icmp_error_notify(sr, ether_hdr, ip_hdr, ntohl(dst_ip), HOST_UNREACHABLE);
+                }
+                sr_arpreq_destroy(cache, req);
+            }
+            req->sent = time(NULL);
+            req->times_sent++;
+        }
+    }
+}
+
+/*
+  Handle ARP reply: Move entries form the ARP request queue to the ARP entries caches:
+  This function shoud be called when receiving ARP reply from other devices
+  # When servicing an arp reply that gives us an IP->MAC mapping
+   req = arpcache_insert(ip, mac)
+
+   if req:
+       send all packets on the req->packets linked list
+       arpreq_destroy(req)
+*/
+void sr_handle_arp_reply(struct sr_instance *sr, unsigned char *dst_mac, unsigned char *src_mac, uint32_t dst_ip)
+{
+    struct sr_arpreq *req =  NULL;
+    struct sr_packet *current_packet = NULL, *next_packet = NULL;
+    struct sr_arpcache *cache = (struct sr_arpcache *)&sr->cache;
+
+    sr_rt_tt *routing_entry = NULL;
+    routing_entry = sr_longest_prefix_match(sr, dst_ip);//dst_ip = source ip of icmp request (doesnt like ip in arp request)
+    struct sr_if *interface = NULL;
+    interface = sr_get_interface(sr, routing_entry->interface);
+    char *iface = interface->name;
+    int ret;
+
+    sr_ethernet_hdr_t *ether_hdr = NULL;
+
+    if((req = sr_arpcache_insert(cache, dst_mac, dst_ip)) == NULL)
+        return;
+
+    /* send all packets on the req->packets linked list */
+    if(req->packets == NULL)
+        return;
+
+    for(current_packet = req->packets; current_packet != NULL; current_packet = next_packet)
+    {
+        next_packet = current_packet->next;
+        ether_hdr = (sr_ethernet_hdr_t *)(current_packet->buf);
+        memset(ether_hdr->ether_dhost, 0, ETHER_ADDR_LEN);
+        memcpy(ether_hdr->ether_dhost, dst_mac, ETHER_ADDR_LEN);
+        memset(ether_hdr->ether_shost, 0, ETHER_ADDR_LEN);
+        memcpy(ether_hdr->ether_shost, src_mac, ETHER_ADDR_LEN);
+        ret = sr_send_packet(sr,current_packet->buf, current_packet->len, iface);
+        if(-1 == ret)
+            break;
+    }
+    sr_arpreq_destroy(cache, req);
+}
 /* 
   This function gets called every second. For each request sent out, we keep
   checking whether we should resend an request or destroy the arp request.
   See the comments in the header file for an idea of what it should look like.
+  Pseudocode:
+     void sr_arpcache_sweepreqs(struct sr_instance *sr) {
+       for each request on sr->cache.requests:
+           handle_arpreq(request)
+   }
 */
 void sr_arpcache_sweepreqs(struct sr_instance *sr) { 
-    /* Fill this in */
+    /* Fill this in*/
+    struct sr_arpcache cache = sr->cache;
+    struct sr_arpreq *current_req = NULL, *next_req = NULL; 
+
+    if(cache.requests == NULL)
+        return;
+
+    for(current_req = cache.requests; current_req != NULL; current_req = next_req)
+    {
+        next_req = current_req->next;
+        sr_handle_arp_req(sr, current_req);
+    }
 }
 
 /* You should not need to touch the rest of this code. */
