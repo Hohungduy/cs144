@@ -16,6 +16,7 @@
 #include <string.h>
 #include "sr_protocol.h"
 #include "sr_arpcache.h"
+#include "sr_nat.h"
 
 /* we dont like this debug , but what to do for varargs ? */
 #ifdef _DEBUG_
@@ -61,6 +62,7 @@ struct sr_instance
     struct sr_if* if_list; /* list of interfaces */
     struct sr_rt* routing_table; /* routing table */
     struct sr_arpcache cache;   /* ARP cache */
+    struct sr_nat nat; /* mapping table in NAT devices */
     pthread_attr_t attr;
     FILE* logfile;
 };
@@ -86,6 +88,7 @@ int send_arp_request(struct sr_instance *sr, struct sr_arpreq *req);
 int send_arp_reply(struct sr_instance *sr, uint8_t *dst_etheraddr, uint8_t *src_etheraddr, 
                     uint32_t dst_ip, uint32_t src_ip, char *iface);
 int checking_packet(uint8_t *packet, unsigned int len);
+
 /* -- sr_if.c -- */
 void sr_add_interface(struct sr_instance* , const char* );
 void sr_set_ether_ip(struct sr_instance* , uint32_t );

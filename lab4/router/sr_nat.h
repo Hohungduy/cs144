@@ -5,7 +5,11 @@
 #include <inttypes.h>
 #include <time.h>
 #include <pthread.h>
+#include <sys/socket.h>
+#include <netinet/ip.h>
+#include <stdbool.h>
 
+#define ICMP_MAPPING_TIMEOUT (60)
 typedef enum {
   nat_mapping_icmp,
   nat_mapping_tcp
@@ -14,7 +18,21 @@ typedef enum {
 
 struct sr_nat_connection {
   /* add TCP connection state data members here */
+  in_addr_t ip_addr;           /* IP address */
+  int port;                    /* Port or ICMP ID*/
+  struct sockaddr_in saddr;    /* Socket address */
 
+  uint32_t init_seqno;         /* My initial sequence number (Use for TCP) */
+  uint32_t their_init_seqno;   /* Their initial sequence number (Use for TCP)*/
+  uint32_t seqno;              /* Current sequence number */
+
+  time_t last_established;
+  time_t last_transitory;
+  
+  bool receive_SYN_int;
+  bool receive_SYN_ext;
+  time_t last_receive_ext;
+  
   struct sr_nat_connection *next;
 };
 
@@ -25,6 +43,7 @@ struct sr_nat_mapping {
   uint16_t aux_int; /* internal port or icmp id */
   uint16_t aux_ext; /* external port or icmp id */
   time_t last_updated; /* use to timeout mappings */
+  int valid; /* flag to mark valid or invalid */
   struct sr_nat_connection *conns; /* list of connections. null for ICMP */
   struct sr_nat_mapping *next;
 };

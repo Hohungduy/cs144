@@ -81,7 +81,8 @@ void sr_init(struct sr_instance* sr)
     pthread_create(&thread, &(sr->attr), sr_arpcache_timeout, sr);
     
     /* Add initialization code here! */
-
+    /* Init mapping table */
+    sr_nat_init(&(sr->nat));
 } /* -- sr_init -- */
 
 /* -------------- CREATION FUNCTION: remember free after using ------------------- */

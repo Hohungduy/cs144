@@ -3,14 +3,15 @@
 #include <assert.h>
 #include "sr_nat.h"
 #include <unistd.h>
-
+#include <string.h>
+#include <stdlib.h>
 int sr_nat_init(struct sr_nat *nat) { /* Initializes the nat */
 
   assert(nat);
 
   /* Acquire mutex lock */
   pthread_mutexattr_init(&(nat->attr));
-  pthread_mutexattr_settype(&(nat->attr), PTHREAD_MUTEX_RECURSIVE);
+  pthread_mutexattr_settype(&(nat->attr), PTHREAD_MUTEX_RECURSIVE_NP);
   int success = pthread_mutex_init(&(nat->lock), &(nat->attr));
 
   /* Initialize timeout thread */
@@ -51,7 +52,14 @@ void *sr_nat_timeout(void *nat_ptr) {  /* Periodic Timout handling */
     time_t curtime = time(NULL);
 
     /* handle periodic tasks here */
-
+    struct sr_nat_mapping *nat_mapping = NULL;
+    for(nat_mapping = nat->mappings; nat_mapping != NULL; nat_mapping = nat_mapping->next)
+    {
+      if((nat_mapping->type == nat_mapping_icmp) && (nat_mapping->valid)&& (difftime(curtime, nat_mapping->last_updated) > ICMP_MAPPING_TIMEOUT))
+      {
+        nat_mapping->valid = 0;
+      }
+    }
     pthread_mutex_unlock(&(nat->lock));
   }
   return NULL;
@@ -95,6 +103,27 @@ struct sr_nat_mapping *sr_nat_insert_mapping(struct sr_nat *nat,
 
   /* handle insert here, create a mapping, and then return a copy of it */
   struct sr_nat_mapping *mapping = NULL;
+
+  for(mapping = nat->mappings; mapping != NULL; mapping = mapping->next)
+  {
+    if((mapping->ip_int == ip_int) && (mapping->aux_int == aux_int))
+      break;
+  }
+  /* If it was not found or there are no mapping entry in mapping table */
+  if(!mapping)
+  {
+    mapping = (struct sr_nat_mapping*)calloc(1, sizeof(struct sr_nat_mapping));
+
+    mapping->aux_int = aux_int;
+    mapping->type = type;
+    mapping->ip_int = ip_int;
+
+    mapping->next = nat->mappings;
+    nat->mappings = mapping;
+    /* init some field */
+    mapping->valid = true;
+  }
+  /* write add connection */
 
   pthread_mutex_unlock(&(nat->lock));
   return mapping;

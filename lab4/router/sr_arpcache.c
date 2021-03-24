@@ -361,7 +361,7 @@ int sr_arpcache_init(struct sr_arpcache *cache) {
     
     /* Acquire mutex lock */
     pthread_mutexattr_init(&(cache->attr));
-    pthread_mutexattr_settype(&(cache->attr), PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutexattr_settype(&(cache->attr), PTHREAD_MUTEX_RECURSIVE_NP);
     int success = pthread_mutex_init(&(cache->lock), &(cache->attr));
     
     return success;

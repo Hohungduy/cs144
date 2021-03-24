@@ -2,6 +2,12 @@
     "files.associations": {
         "ctcp_utils.h": "c",
         "sr_rt.h": "c",
-        "sr_router.h": "c"
+        "sr_router.h": "c",
+        "ctcp_sys.h": "c",
+        "ip.h": "c",
+        "ctcp.h": "c",
+        "cstdlib": "c",
+        "unistd.h": "c",
+        "sr_nat.h": "c"
     }
 }
