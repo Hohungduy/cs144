@@ -23,6 +23,9 @@
 #include "sr_router.h"
 #include "sr_utils.h"
 
+uint32_t ip_mask_all = 0xFFFFFFFF;
+
+#define min(a, b) ((a) > (b) ? (b) : (a))
 /*---------------------------------------------------------------------
  * Method:
  *
@@ -178,39 +181,80 @@ void sr_print_routing_entry(struct sr_rt* entry)
 
 } /* -- sr_print_routing_entry -- */
 
-/* This is just simple LPM , reference method using binary search in lpm: https://github.com/Hohungduy/liblpm.git */
+/*  This is just simple LPM , reference method using binary search in lpm: https://github.com/Hohungduy/liblpm.git 
+    Notice about argument:
+    - dst_ip: network byte ordered (long)
+*/
 sr_rt_tt* sr_longest_prefix_match(struct sr_instance* sr, uint32_t des_ip)
 {
-    sr_rt_tt *current_entry = sr->routing_table;
+    sr_rt_tt *current_entry = NULL;
     sr_rt_tt *next_entry = NULL;
     sr_rt_tt *match_entry = NULL;
-    unsigned int max = 0;
-    if(current_entry == NULL)
+    sr_rt_tt *default_entry = NULL;
+    // unsigned int max = 0;
+    uint32_t min_diff = 0;
+    uint32_t diff = 0;
+    uint32_t count_match = 0;
+
+    uint32_t ip_subnet = 0;
+    uint32_t ip_subnet_broadcast = 0;
+
+    if((current_entry = sr->routing_table) == NULL)
         return current_entry;
     /* init first ip */
 
-    for(;current_entry != NULL; current_entry = next_entry)
+    for(current_entry = sr->routing_table; current_entry != NULL; current_entry = next_entry)
     {
-        printf("[%d]: %s: Failed! \n", __LINE__, __func__);
         next_entry = current_entry->next;
-        if(((ntohl(current_entry->dest.s_addr) & ntohl(current_entry->mask.s_addr)) == (ntohl(des_ip))) && (max <= (current_entry->mask.s_addr)))
+        if((ntohl(current_entry->mask.s_addr) - ip_mask_all) == 0)
         {
-            #ifdef DEBUG_PRINT
-            printf("curent entry ip address:\n");
-            print_addr_ip_int(ntohl(current_entry->dest.s_addr) & ntohl(current_entry->mask.s_addr));
-            printf("destination ip address:\n");
-            print_addr_ip_int(ntohl(des_ip));
-            #endif
-            max = current_entry->mask.s_addr;
-            match_entry = current_entry;
-        }
-        if(match_entry == NULL)
-        {
-            if(ntohl(des_ip) == ntohl(current_entry->gw.s_addr))
+            if(ntohl(current_entry->dest.s_addr) == ntohl(des_ip))
             {
                 match_entry = current_entry;
+                break;
             }
         }
+        if(ntohl(current_entry->mask.s_addr) == 0)
+        {
+            default_entry = current_entry;
+        }
     }
-    return match_entry;
+    if(match_entry)
+        return match_entry;
+    
+    for(current_entry = sr->routing_table; current_entry != NULL; current_entry = next_entry)
+    {
+        next_entry = current_entry->next;
+        if((ntohl(current_entry->mask.s_addr) < ip_mask_all) && (ntohl(current_entry->mask.s_addr) > 0))
+        {
+            ip_subnet = ntohl(current_entry->dest.s_addr) & ntohl(current_entry->mask.s_addr);
+            ip_subnet_broadcast = ntohl(current_entry->dest.s_addr) | (ip_mask_all - ntohl(current_entry->mask.s_addr));
+            if((ntohl(des_ip) > ip_subnet) && (ntohl(des_ip) < ip_subnet_broadcast))
+            {
+                diff = min((ntohl(des_ip) - ip_subnet), (ip_subnet_broadcast - ntohl(des_ip)));
+            }
+        }
+        if(!count_match)
+        {
+            min_diff = diff;
+            match_entry = current_entry;
+            count_match++;
+        }
+        else
+        {
+            if(diff < min_diff)
+            {
+                min_diff = diff;
+                match_entry = current_entry;
+            }
+            count_match++;
+        }
+    }
+    if(min_diff)
+        return match_entry;
+
+    if(default_entry == NULL)
+        return NULL;
+    else
+        return default_entry;
 }

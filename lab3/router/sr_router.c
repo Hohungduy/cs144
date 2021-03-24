@@ -46,7 +46,6 @@
 #define ICMP_ECHO_REPLY_CODE (0)
 
 uint8_t broadcast_ether_addr[ETHER_ADDR_LEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; // similar to unsigned char
-uint32_t ip_mask_all = 0xFFFFFFFF;
 
 /* -----------------Declaration of Static Function---------------------*/
 static sr_icmp_t3_hdr_t * create_icmp_type3_header(void *icmp_data, int TypeCode_icmp);

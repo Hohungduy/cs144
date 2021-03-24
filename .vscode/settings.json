@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "ctcp_utils.h": "c",
-        "sr_rt.h": "c"
+        "sr_rt.h": "c",
+        "sr_router.h": "c"
     }
 }

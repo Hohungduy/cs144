@@ -46,7 +46,6 @@
 #define ICMP_ECHO_REPLY_CODE (0)
 
 uint8_t broadcast_ether_addr[ETHER_ADDR_LEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; // similar to unsigned char
-uint32_t ip_mask_all = 0xFFFFFFFF;
 
 /* -----------------Declaration of Static Function---------------------*/
 static sr_icmp_t3_hdr_t * create_icmp_type3_header(void *icmp_data, int TypeCode_icmp);
@@ -131,6 +130,12 @@ static sr_icmp_hdr_t *create_icmp_header(uint8_t *icmp_data, uint16_t icmp_data_
     return icmp_hdr;
 }/* -- create ICMP header (error ICMP) --*/
 
+/* create ip header:
+    Notice about argument we pass: 
+    - ip_id argument: host byte ordered (short) -> need to use htons in this function before transmitting
+    - dst_ip argument: host byte ordered (long) -> need to use htonl in this function before transmitting
+    - src_ip argument: host byte ordered (long) -> need to use htonl in this function before transmitting
+*/
 static sr_ip_hdr_t *create_ip_header(uint16_t ip_id,  uint32_t dst_ip, uint32_t src_ip,
                                      int TypeCode_icmp, uint16_t icmp_data_len)
 {
@@ -159,6 +164,11 @@ static sr_ip_hdr_t *create_ip_header(uint16_t ip_id,  uint32_t dst_ip, uint32_t 
     return ip_icmp_hdr;
 }/* -- create IP header --*/
 
+/* create ethernet header:
+    Notice about argument we pass: 
+    - dest_host_addr argument: network byte ordered (this is array (block of memory): using memcpy)
+    - src_host_addr argument: network byte ordered (this is array (block of memory): using memcpy)
+*/
 static sr_ethernet_hdr_t *create_ethernet_header(uint8_t *dest_host_addr, uint8_t *src_host_addr, uint16_t ether_type)
 {
     sr_ethernet_hdr_t *ether_icmp_hdr = (sr_ethernet_hdr_t *)calloc(1, sizeof(sr_ethernet_hdr_t));
@@ -171,6 +181,13 @@ static sr_ethernet_hdr_t *create_ethernet_header(uint8_t *dest_host_addr, uint8_
     return ether_icmp_hdr;
 }/* -- create ethernet header --*/
 
+/* create arp header:
+    Notice about argument we pass: 
+    - dst_hw_addr argument: network byte ordered (this is array (block of memory): using memcpy)
+    - src_hw_addr argument: network byte ordered (this is array (block of memory): using memcpy)
+    - dst_ip: host byte ordered (long) -> need to use htonl in this function before transmitting
+    - src_ip: host byte ordered (long) -> need to use htonl in this function before transmitting
+*/
 static sr_arp_hdr_t *create_arp_header(unsigned char *dst_hw_addr, unsigned char *src_hw_addr, uint32_t dst_ip, uint32_t src_ip, unsigned short arp_opcode)
 {
     sr_arp_hdr_t *arp_hdr = (sr_arp_hdr_t *)calloc(1, sizeof(sr_arp_hdr_t));
@@ -189,6 +206,10 @@ static sr_arp_hdr_t *create_arp_header(unsigned char *dst_hw_addr, unsigned char
     return arp_hdr;
 }
 
+/* send_icmp_error_notify:
+    Notice about argument we pass: 
+    - dst_ip: host byte ordered (long) ( need to use ntohl before calling this function)
+*/
 int send_icmp_error_notify(struct sr_instance *sr, sr_ethernet_hdr_t *ether_hdr, sr_ip_hdr_t *ip_hdr, 
                             uint32_t dst_ip, int TypeCode_icmp)
 {
@@ -230,6 +251,14 @@ int send_icmp_error_notify(struct sr_instance *sr, sr_ethernet_hdr_t *ether_hdr,
     return ret;
 }
 
+/* send_icmp_reply:
+    Notice about argument we pass: 
+    - ip_id: host byte ordered (short) (need to use ntohs before calling this function)
+    - ether_dhost: network byte ordered (this is array (block of memory): using memcpy)
+    - ether_shost: network byte ordered (this is array (block of memory): using memcpy)
+    - dst_ip: host byte ordered (long) ( need to use ntohl before calling this function)
+    - src_ip: host byte ordered (long) ( need to use ntohl before calling this function)
+*/
 int send_icmp_reply(struct sr_instance *sr, char *iface, uint16_t ip_id, 
                     uint8_t *ether_dhost, uint8_t *ether_shost, 
                     uint32_t dst_ip, uint32_t src_ip, uint8_t *icmp_data, 
@@ -310,6 +339,14 @@ int send_arp_request(struct sr_instance *sr, struct sr_arpreq *req)
     return ret;
 }
 
+/* send_arp_reply:
+    Notice about argument we pass: 
+    - ip_id: host byte ordered (short) (need to use ntohs before calling this function)
+    - dst_etheraddr: network byte ordered (this is array (block of memory): using memcpy)
+    - src_etheraddr: network byte ordered (this is array (block of memory): using memcpy)
+    - dst_ip: host byte ordered (long) ( need to use ntohl before calling this function)
+    - src_ip: host byte ordered (long) ( need to use ntohl before calling this function)
+*/
 int send_arp_reply(struct sr_instance *sr, uint8_t *dst_etheraddr, uint8_t *src_etheraddr, uint32_t dst_ip, uint32_t src_ip, char *iface)
 {
     int ret;
@@ -339,16 +376,20 @@ int send_arp_reply(struct sr_instance *sr, uint8_t *dst_etheraddr, uint8_t *src_
 
     return ret;
 }
-/*
- *   Pseudocode
-  # When sending packet to next_hop_ip
-   entry = arpcache_lookup(next_hop_ip)
-   if entry:
-       use next_hop_ip->mac mapping in entry to send the packet
-       free entry
-   else:
-       req = arpcache_queuereq(next_hop_ip, packet, len)
-       handle_arpreq(req)
+/*  forward packet
+    Pseudocode
+    # When sending packet to next_hop_ip
+    entry = arpcache_lookup(next_hop_ip)
+    if entry:
+        use next_hop_ip->mac mapping in entry to send the packet
+        free entry
+    else:
+        req = arpcache_queuereq(next_hop_ip, packet, len)
+        handle_arpreq(req)
+    
+    
+    Notice:
+    - dst_ip: network byte ordered (long) 
 */
 int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32_t dst_ip)
 {
@@ -534,9 +575,7 @@ void sr_handlepacket(struct sr_instance* sr,
     struct sr_if *next_interface = NULL;
     ether_hdr = (sr_ethernet_hdr_t *)packet;
 
-    // sr_rt_tt *routing_entry = NULL;
     struct sr_if *interface_entry = NULL;
-    // char *iface = NULL;
     if(ethertype(packet) == ethertype_ip){
         /* IP */
         ip_hdr = (sr_ip_hdr_t *)(packet + sizeof(sr_ethernet_hdr_t));
@@ -556,7 +595,7 @@ void sr_handlepacket(struct sr_instance* sr,
             print_addr_ip_int(ntohl(current_interface->ip));
             if(ntohl(ip_hdr->ip_dst) == ntohl(current_interface->ip))
             {
-                /* sent to this host */
+                /* ----------------sent to this host----------------------- */
                 if(ip_hdr->ip_p == ip_protocol_icmp)
                 {
                     /* send ICMP reply */
@@ -566,9 +605,7 @@ void sr_handlepacket(struct sr_instance* sr,
                         fprintf(stderr, "[ERROR]: This is not icmp request! -> quit!\n");
                         return;
                     }
-                    // routing_entry = sr_longest_prefix_match(sr, ip_hdr->ip_src);//dst_ip = source ip of icmp request (doesnt like ip in arp request)
-                    // interface_entry = sr_get_interface(sr, routing_entry->interface);
-                    // iface = interface->name;
+
                     icmp_data = (uint8_t *)(icmp_hdr + sizeof(sr_icmp_hdr_t));
                     icmp_datalen = len - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t) -sizeof(sr_icmp_hdr_t);
                     if(icmp_datalen <= 0)
@@ -592,7 +629,7 @@ void sr_handlepacket(struct sr_instance* sr,
                 }
             }
             else{
-                /* forward packet */
+                /* -----------------forward packet------------------------------ */
                 printf("*** <- Forward Packet\n");
                 ret = forward_packet(sr, packet, len, ip_hdr->ip_dst); // dont care interface we received this packet
                 if(ret != 0)
@@ -606,7 +643,7 @@ void sr_handlepacket(struct sr_instance* sr,
     }
     else if(ethertype(packet) == ethertype_arp)
     {
-        /* handle ARP request or  ARP reply */
+        /* --------------------handle ARP request or ARP reply------------------ */
         arp_hdr = (sr_arp_hdr_t *)(packet + sizeof(sr_ethernet_hdr_t));
         
         if(ntohs(arp_hdr->ar_op) == arp_op_request)

@@ -40,18 +40,19 @@ void send_reply_host_unreachable(struct sr_instance *sr, struct sr_arpreq *req)
     }
 }
 /*
-  Handle sending ARP requests if necessary:
-  Pseudocode for use of these structures follows:
-     function handle_arpreq(req):
-       if difftime(now, req->sent) >= 1.0
-           if req->times_sent >= 5:
-               send icmp host unreachable to source addr of all pkts waiting
-                 on this request
-               arpreq_destroy(req)
-           else:
-               send arp request
-               req->sent = now
-               req->times_sent++
+    Handle sending ARP requests if necessary:
+    
+    Pseudocode for use of these structures follows:
+        function handle_arpreq(req):
+        if difftime(now, req->sent) >= 1.0
+            if req->times_sent >= 5:
+                send icmp host unreachable to source addr of all pkts waiting
+                    on this request
+                arpreq_destroy(req)
+            else:
+                send arp request
+                req->sent = now
+                req->times_sent++
 */
 void sr_handle_arp_req(struct sr_instance *sr, struct sr_arpreq *req){
     time_t current_time = time(NULL);
@@ -97,14 +98,20 @@ void sr_handle_arp_req(struct sr_instance *sr, struct sr_arpreq *req){
 }
 
 /*
-  Handle ARP reply: Move entries form the ARP request queue to the ARP entries caches:
-  This function shoud be called when receiving ARP reply from other devices
-  # When servicing an arp reply that gives us an IP->MAC mapping
-   req = arpcache_insert(ip, mac)
+    Handle ARP reply: Move entries form the ARP request queue to the ARP entries caches:
+    This function shoud be called when receiving ARP reply from other devices
 
-   if req:
-       send all packets on the req->packets linked list
-       arpreq_destroy(req)
+    Pseudocode:
+
+    # When servicing an arp reply that gives us an IP->MAC mapping
+    req = arpcache_insert(ip, mac)
+
+    if req:
+        send all packets on the req->packets linked list
+        arpreq_destroy(req)
+
+    Notice:
+    - dst_ip: network byte ordered (long)
 */
 void sr_handle_arp_reply(struct sr_instance *sr, unsigned char *dst_mac, unsigned char *src_mac, uint32_t dst_ip)
 {
@@ -146,6 +153,7 @@ void sr_handle_arp_reply(struct sr_instance *sr, unsigned char *dst_mac, unsigne
   This function gets called every second. For each request sent out, we keep
   checking whether we should resend an request or destroy the arp request.
   See the comments in the header file for an idea of what it should look like.
+  
   Pseudocode:
      void sr_arpcache_sweepreqs(struct sr_instance *sr) {
        for each request on sr->cache.requests:
