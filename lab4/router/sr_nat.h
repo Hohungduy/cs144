@@ -8,30 +8,40 @@
 #include <sys/socket.h>
 #include <netinet/ip.h>
 #include <stdbool.h>
-
+#include <stdio.h>
+#include "sr_protocol.h"
 #define ICMP_MAPPING_TIMEOUT (60)
+#define TCP_ESTABLISHED_TIMEOUT (7440)
+#define TCP_TRANSITORY (240)
+
+
 typedef enum {
   nat_mapping_icmp,
   nat_mapping_tcp
   /* nat_mapping_udp, */
 } sr_nat_mapping_type;
 
+typedef enum {
+  state_transitory = 1,
+  state_established
+}state_t;
 struct sr_nat_connection {
+  /* use 4 tuple: source/ destination IP address and source/ destination port 
+    in order to determine connection */
+  uint32_t src_ip;/*src ip*/
+  uint32_t dst_ip;/*dst ip */
+
+  uint16_t src_port;/*src port*/
+  uint16_t dst_port;/*dst port*/
+
   /* add TCP connection state data members here */
-  in_addr_t ip_addr;           /* IP address */
-  int port;                    /* Port or ICMP ID*/
-  struct sockaddr_in saddr;    /* Socket address */
-
-  uint32_t init_seqno;         /* My initial sequence number (Use for TCP) */
-  uint32_t their_init_seqno;   /* Their initial sequence number (Use for TCP)*/
-  uint32_t seqno;              /* Current sequence number */
-
-  time_t last_established;
-  time_t last_transitory;
+  time_t last_established; /* time stamp for Established state */
+  time_t last_transitory; /* time stamp for transitory state (partial open) */
   
-  bool receive_SYN_int;
-  bool receive_SYN_ext;
-  time_t last_receive_ext;
+  bool receive_SYN_int; /* receive SYN from internal side */
+  bool receive_SYN_ext; /* receive SYN form external side */
+
+  state_t state;
   
   struct sr_nat_connection *next;
 };
@@ -43,7 +53,7 @@ struct sr_nat_mapping {
   uint16_t aux_int; /* internal port or icmp id */
   uint16_t aux_ext; /* external port or icmp id */
   time_t last_updated; /* use to timeout mappings */
-  int valid; /* flag to mark valid or invalid */
+  bool valid; /* flag to mark valid or invalid */
   struct sr_nat_connection *conns; /* list of connections. null for ICMP */
   struct sr_nat_mapping *next;
 };
@@ -79,5 +89,7 @@ struct sr_nat_mapping *sr_nat_lookup_internal(struct sr_nat *nat,
 struct sr_nat_mapping *sr_nat_insert_mapping(struct sr_nat *nat,
   uint32_t ip_int, uint16_t aux_int, sr_nat_mapping_type type );
 
-
+struct sr_nat_connection* sr_lookup_nat_tcpconnection(struct sr_nat_mapping *mapping, sr_ip_hdr_t *ip_hdr);
+struct sr_nat_connection* sr_insert_nat_tcpconnection(struct sr_nat_mapping *mapping, sr_ip_hdr_t *ip_hdr);
+struct sr_nat_connection* sr_destroy_nat_tcpconnection(struct sr_nat_mapping *mapping, struct sr_nat_connection);
 #endif

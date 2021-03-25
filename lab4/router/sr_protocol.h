@@ -83,12 +83,15 @@ struct sr_icmp_hdr {
   uint8_t icmp_type;
   uint8_t icmp_code;
   uint16_t icmp_sum;
+  uint16_t icmp_id; /* using for NAT */
+  uint16_t icmp_seqno;
   
 } __attribute__ ((packed)) ;
 typedef struct sr_icmp_hdr sr_icmp_hdr_t;
 
 
-/* Structure of a type3 ICMP header
+/* 
+  Structure of a type3 ICMP header
  */
 struct sr_icmp_t3_hdr {
   uint8_t icmp_type;
@@ -152,6 +155,7 @@ typedef struct sr_ethernet_hdr sr_ethernet_hdr_t;
 
 enum sr_ip_protocol {
   ip_protocol_icmp = 0x0001,
+  ip_protocol_tcp = 0x0006
 };
 
 enum sr_ethertype {
@@ -187,5 +191,89 @@ struct sr_arp_hdr
 typedef struct sr_arp_hdr sr_arp_hdr_t;
 
 #define sr_IFACE_NAMELEN 32
+
+/*
+ * TCP header segment.
+ * Use for forwading SYN packet from internal side
+ * Make sure fields are in network-byte order when sending.
+ */
+
+struct tcphdr
+  {
+    __extension__ union
+    {
+      struct
+      {
+	u_int16_t th_sport;		/* source port */
+	u_int16_t th_dport;		/* destination port */
+	u_int32_t th_seq;		/* sequence number */
+	u_int32_t th_ack;		/* acknowledgement number */
+# if __BYTE_ORDER == __LITTLE_ENDIAN
+	u_int8_t th_x2:4;		/* (unused) */
+	u_int8_t th_off:4;		/* data offset */
+# endif
+# if __BYTE_ORDER == __BIG_ENDIAN
+	u_int8_t th_off:4;		/* data offset */
+	u_int8_t th_x2:4;		/* (unused) */
+# endif
+	u_int8_t th_flags;
+# define TH_FIN	0x01
+# define TH_SYN	0x02
+# define TH_RST	0x04
+# define TH_PUSH	0x08
+# define TH_ACK	0x10
+# define TH_URG	0x20
+	u_int16_t th_win;		/* window */
+	u_int16_t th_sum;		/* checksum */
+	u_int16_t th_urp;		/* urgent pointer */
+      };
+      struct
+      {
+	u_int16_t source;
+	u_int16_t dest;
+	u_int32_t seq;
+	u_int32_t ack_seq;
+# if __BYTE_ORDER == __LITTLE_ENDIAN
+	u_int16_t res1:4;
+	u_int16_t doff:4;
+	u_int16_t fin:1;
+	u_int16_t syn:1;
+	u_int16_t rst:1;
+	u_int16_t psh:1;
+	u_int16_t ack:1;
+	u_int16_t urg:1;
+	u_int16_t res2:2;
+# elif __BYTE_ORDER == __BIG_ENDIAN
+	u_int16_t doff:4;
+	u_int16_t res1:4;
+	u_int16_t res2:2;
+	u_int16_t urg:1;
+	u_int16_t ack:1;
+	u_int16_t psh:1;
+	u_int16_t rst:1;
+	u_int16_t syn:1;
+	u_int16_t fin:1;
+# else
+#  error "Adjust your <bits/endian.h> defines"
+# endif
+	u_int16_t window;
+	u_int16_t check;
+	u_int16_t urg_ptr;
+      };
+    };
+};
+typedef struct tcphdr tcphdr_t;
+
+/** TCP pseudoheader, used in checksum calculations. */
+struct tcp_pseudoheader {
+  uint32_t src_addr;        /* Source address */
+  uint32_t dst_addr;        /* Destination address */
+  uint8_t placeholder;
+  uint8_t protocol;         /* IP protocol (should be 6 for TCP) */
+  uint16_t tcp_len;         /* TCP length */
+  tcphdr_t tcp_hdr;         /* TCP header */
+} __attribute__((packed));
+typedef struct tcp_pseudoheader tcp_pseudoheader_t;
+#define TCP_PSEUDOHDR_SIZE sizeof(tcp_pseudoheader_t)
 
 #endif /* -- SR_PROTOCOL_H -- */

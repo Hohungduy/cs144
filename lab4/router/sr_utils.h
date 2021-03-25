@@ -28,7 +28,9 @@
 #ifndef SR_UTILS_H
 #define SR_UTILS_H
 
+int generate_random(int l, int r);
 uint16_t cksum(const void *_data, int len);
+uint16_t cksum_tcp(sr_ip_hdr_t *packet, uint16_t len);
 
 uint16_t ethertype(uint8_t *buf);
 uint8_t ip_protocol(uint8_t *buf);

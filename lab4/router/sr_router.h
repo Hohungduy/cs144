@@ -82,8 +82,8 @@ int send_icmp_error_notify(struct sr_instance *sr, sr_ethernet_hdr_t *ether_hdr,
                           sr_ip_hdr_t *ip_hdr, uint32_t des_ip, int TypeCode_icmp);
 int send_icmp_reply(struct sr_instance *sr, char *iface, uint16_t ip_id, 
                     uint8_t *ether_dhost, uint8_t *ether_shost, 
-                    uint32_t dst_ip, uint32_t src_ip, uint8_t *icmp_data, 
-                    uint16_t icmp_data_len, int TypeCode_icmp);
+                    uint32_t dst_ip, uint32_t src_ip, uint16_t icmp_id, uint16_t icmp_seqno,
+                    uint8_t *icmp_data, uint16_t icmp_data_len, int TypeCode_icmp);
 int send_arp_request(struct sr_instance *sr, struct sr_arpreq *req);
 int send_arp_reply(struct sr_instance *sr, uint8_t *dst_etheraddr, uint8_t *src_etheraddr, 
                     uint32_t dst_ip, uint32_t src_ip, char *iface);

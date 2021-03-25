@@ -8,6 +8,12 @@
         "ctcp.h": "c",
         "cstdlib": "c",
         "unistd.h": "c",
-        "sr_nat.h": "c"
+        "sr_nat.h": "c",
+        "ctcp_linked_list.h": "c",
+        "string.h": "c",
+        "in.h": "c",
+        "sr_arpcache.h": "c",
+        "sr_protocol.h": "c",
+        "sr_utils.h": "c"
     }
 }

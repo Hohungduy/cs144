@@ -5,6 +5,10 @@
 #include "sr_protocol.h"
 #include "sr_utils.h"
 
+int generate_random(int l, int r) { //this will generate random number in range l and r
+  int rand_num = (rand() % (r - l + 1)) + l;
+  return rand_num;
+}
 long current_time() {
   struct timeval tv;
   gettimeofday(&tv, NULL);
@@ -23,6 +27,31 @@ uint16_t cksum (const void *_data, int len) {
     sum = (sum >> 16) + (sum & 0xffff);
   sum = htons (~sum);
   return sum ? sum : 0xffff;
+}
+
+/**
+ * Computes the TCP checksum. Returns the checksum in network order.
+ *
+ * packet: IP packet with a TCP payload.
+ * len: Length of data (0 if no data and only TCP and IP headers).
+ *
+ * returns: The checksum in network order.
+ */
+uint16_t cksum_tcp(sr_ip_hdr_t *packet, uint16_t len) {
+  tcphdr_t *tcp_hdr = (tcphdr_t *) ((uint8_t *) packet + sizeof(sr_ip_hdr_t));
+
+  /* Construct pseudoheader. */
+  tcp_pseudoheader_t *phdr = calloc(TCP_PSEUDOHDR_SIZE + len, 1);
+  phdr->src_addr = packet->ip_src;
+  phdr->dst_addr = packet->ip_dst;
+  phdr->protocol = IPPROTO_TCP;
+  phdr->tcp_len = htons(sizeof(tcphdr_t) + len);
+
+  /* Append TCP segment and compute checksum. */
+  memcpy(&(phdr->tcp_hdr), tcp_hdr, sizeof(tcphdr_t) + len);
+  uint16_t result = cksum(phdr, len + TCP_PSEUDOHDR_SIZE);
+  free(phdr);
+  return result;
 }
 
 

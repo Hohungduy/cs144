@@ -46,10 +46,15 @@
 #define ICMP_ECHO_REPLY_CODE (0)
 
 uint8_t broadcast_ether_addr[ETHER_ADDR_LEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; // similar to unsigned char
+const char *internal_iface = "eth1";
+const char *external_iface = "eth2";
+
+static char *ext_ip_eth2 = "184.72.104.217";
+static char *int_ip_eth1 = "10.0.1.1";
 
 /* -----------------Declaration of Static Function---------------------*/
 static sr_icmp_t3_hdr_t * create_icmp_type3_header(void *icmp_data, int TypeCode_icmp);
-static sr_icmp_hdr_t *create_icmp_header(uint8_t *icmp_data, uint16_t icmp_data_len);
+static sr_icmp_hdr_t *create_icmp_header(uint16_t icmp_id, uint16_t icmp_seqno, uint8_t *icmp_data, uint16_t icmp_data_len);
 static sr_ip_hdr_t *create_ip_header(uint16_t ip_id,  uint32_t dst_ip, uint32_t src_ip,
                                     int TypeCode_icmp, uint16_t icmp_data_len);
 static sr_ethernet_hdr_t *create_ethernet_header(uint8_t *dest_host_addr, uint8_t *src_host_addr, uint16_t ether_type);
@@ -119,12 +124,14 @@ static sr_icmp_t3_hdr_t * create_icmp_type3_header(void *icmp_data, int TypeCode
     return icmp_hdr;
 }/* -- create ICMP header (error ICMP) --*/
 
-static sr_icmp_hdr_t *create_icmp_header(uint8_t *icmp_data, uint16_t icmp_data_len)
+static sr_icmp_hdr_t *create_icmp_header(uint16_t icmp_id, uint16_t icmp_seqno, uint8_t *icmp_data, uint16_t icmp_data_len)
 {
     /* create icmp header (type 0: reply) */
     sr_icmp_hdr_t *icmp_hdr = (sr_icmp_hdr_t *)calloc(1, sizeof(sr_icmp_hdr_t) + icmp_data_len);
     icmp_hdr->icmp_type = ICMP_ECHO_REPLY_TYPE;// 1 byte: no need to use ntohs
     icmp_hdr->icmp_code = ICMP_ECHO_REPLY_CODE;
+    icmp_hdr->icmp_id = htons(icmp_id);
+    icmp_hdr->icmp_seqno = htons(icmp_seqno);
     memcpy(icmp_hdr + sizeof(sr_icmp_hdr_t), icmp_data, icmp_data_len);
     icmp_hdr->icmp_sum =0;
     icmp_hdr->icmp_sum = cksum(icmp_hdr,sizeof(struct sr_icmp_hdr) + icmp_data_len);
@@ -262,12 +269,12 @@ int send_icmp_error_notify(struct sr_instance *sr, sr_ethernet_hdr_t *ether_hdr,
 */
 int send_icmp_reply(struct sr_instance *sr, char *iface, uint16_t ip_id, 
                     uint8_t *ether_dhost, uint8_t *ether_shost, 
-                    uint32_t dst_ip, uint32_t src_ip, uint8_t *icmp_data, 
-                    uint16_t icmp_data_len, int TypeCode_icmp)
+                    uint32_t dst_ip, uint32_t src_ip, uint16_t icmp_id, uint16_t icmp_seqno,
+                    uint8_t *icmp_data, uint16_t icmp_data_len, int TypeCode_icmp)
 {
     int ret;
     /* create icmp header first */
-    sr_icmp_hdr_t *icmp_hdr = create_icmp_header(icmp_data, icmp_data_len);// including data
+    sr_icmp_hdr_t *icmp_hdr = create_icmp_header(icmp_id, icmp_seqno, icmp_data, icmp_data_len);// including data
 
     /* create IP header */
     sr_ip_hdr_t *ip_icmp_hdr = create_ip_header(ip_id, dst_ip, src_ip, TypeCode_icmp, icmp_data_len);
@@ -398,49 +405,274 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
     /* make a copy */
     uint8_t *copy_buf = malloc(len);
 	memcpy(copy_buf, packet, len);
+    /* ethernet and IP header*/
 	sr_ethernet_hdr_t *eth_hdr = (sr_ethernet_hdr_t *)copy_buf;
-	sr_ip_hdr_t *ip_hdr = (sr_ip_hdr_t *) (copy_buf + sizeof(sr_ethernet_hdr_t));
+	sr_ip_hdr_t *ip_hdr = (sr_ip_hdr_t *)(copy_buf + sizeof(sr_ethernet_hdr_t));
+    /*routing entry and its interface */
+    sr_rt_tt *routing_entry = NULL;
+    struct sr_if *interface_entry = NULL;
+    char *iface = NULL;
+    /* arp entry */
+    struct sr_arpentry *arp_entry = NULL;
+    struct sr_arpreq *req = NULL;
+    /* nat mapping entry*/
+    struct sr_nat_mapping *nat_entry = NULL;
 
+    struct in_addr ext_addr;
     /* Check TTL (use for traceroute)*/
     if(ip_hdr->ip_ttl == 1)
+    {
+        fprintf(stderr, "Time to live is zero!\n");
         return TIME_EXCEEDED;
+    }
 
-    /* find routing entry matching with destination ip address */
-    sr_rt_tt *routing_entry = NULL;
-    routing_entry = sr_longest_prefix_match(sr, dst_ip);
-    if(routing_entry == NULL)
-        return NET_UNREACHABLE;// return and send icmp (net unreachable)
+    /* checking if protocol is ICMP or TCP */
+    if(ip_hdr->ip_p == ip_protocol_icmp)
+    {
+        /* IMCP packet*/
+        sr_icmp_hdr_t *icmp_hdr = (sr_icmp_hdr_t *)(copy_buf + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
+        uint32_t icmp_datalen = len - (uint32_t)(sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_hdr_t));
+        if(inet_aton(ext_ip_eth2,&ext_addr) == 0)
+        {
+            fprintf(stderr,"[Error]: cannot convert %s to valid IP\n", ext_ip_eth2);
+            return -1; 
+        }
 
-    /* match -> find MAC address*/
-    struct sr_if *interface_entry = NULL;
-    interface_entry = sr_get_interface(sr, routing_entry->interface);
-    char *iface = interface_entry->name;
-    
-    /*ARP lookup*/
-    struct sr_arpentry *arp_entry = NULL;
+        if(dst_ip == ext_addr.s_addr)/*hard code for this lab*/
+        {
+            /* Inbound */
+            /* NAT lookup */
+            nat_entry = sr_nat_lookup_external(&sr->nat, icmp_hdr->icmp_id, nat_mapping_icmp);
+            if(!nat_entry)
+            {
+                fprintf(stderr, "[ERROR]: Can find suitable mapping ICMP ID\n");
+                return PORT_UNREACHABLE;
+            }
 
-    arp_entry = sr_arpcache_lookup(&sr->cache, dst_ip);
-    
-	if (arp_entry) {
-        /* update source and destination MAC address */
-		memcpy(eth_hdr->ether_shost, interface_entry->addr, ETHER_ADDR_LEN);
-		memcpy(eth_hdr->ether_dhost, arp_entry->mac, ETHER_ADDR_LEN);
-	} else {
-		fprintf(stderr, "MAC not found in ARP cache, queuing this request\n");
-		struct sr_arpreq *req = sr_arpcache_queuereq(&sr->cache, ip_hdr->ip_dst, copy_buf, len, iface);
-        sr_handle_arp_req(sr, req);
-		return 0;
-	}
-    
-	/* Update ttl and checksum value after finding arp entry */
-	ip_hdr->ip_ttl--;
-	ip_hdr->ip_sum = 0;
-	ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
-	
-    /* forwading packet */
-	ret = sr_send_packet(sr, copy_buf, len, iface);
-	free(copy_buf);
-	return ret;
+            /* rewrite ICMP ID */
+            icmp_hdr->icmp_id = nat_entry->aux_int; /* internal ID */
+            /* compute checksum of ICMP header */
+            icmp_hdr->icmp_sum = 0;
+            icmp_hdr->icmp_sum = cksum(icmp_hdr, sizeof(sr_icmp_hdr_t) + icmp_datalen);
+
+            /* rewrite IP address */
+            ip_hdr->ip_dst = nat_entry->ip_int;/* internal IP */
+
+            /* find routing entry matching with destination ip address */
+            routing_entry = sr_longest_prefix_match(sr, ip_hdr->ip_dst);
+            if(routing_entry == NULL)
+            {
+                fprintf(stderr, "cannot find routing entry matching with destination Ip address\n");
+                return NET_UNREACHABLE;// return and send icmp (net unreachable)
+            }
+
+            /* match -> find MAC address*/
+            interface_entry = sr_get_interface(sr, routing_entry->interface);
+            iface = interface_entry->name;
+
+            /*ARP lookup*/
+            arp_entry = sr_arpcache_lookup(&sr->cache, ip_hdr->ip_dst);
+            if (arp_entry) {
+                /* update source and destination MAC address */
+                memcpy(eth_hdr->ether_shost, interface_entry->addr, ETHER_ADDR_LEN);
+                memcpy(eth_hdr->ether_dhost, arp_entry->mac, ETHER_ADDR_LEN);
+            } 
+            else {
+                fprintf(stderr, "MAC not found in ARP cache, queuing this request\n");
+                req = sr_arpcache_queuereq(&sr->cache, ip_hdr->ip_dst, copy_buf, len, iface);
+                sr_handle_arp_req(sr, req);
+                return 0;
+            }
+
+            /* Update ttl and checksum value after finding arp entry */
+            ip_hdr->ip_ttl--;
+            ip_hdr->ip_sum = 0;
+            ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
+            
+            /* forwading packet */
+            ret = sr_send_packet(sr, copy_buf, len, iface);
+            free(copy_buf);
+        }
+        else/*harcode for this lab*/
+        {
+            /* Outbound */
+            /* NAT lookup */
+            nat_entry = sr_nat_lookup_internal(&sr->nat, ip_hdr->ip_src, icmp_hdr->icmp_id, nat_mapping_icmp);
+            if(!nat_entry)
+            {
+                /* allocate new mapping */
+                nat_entry = sr_nat_insert_mapping(&sr->nat, ip_hdr->ip_src, icmp_hdr->icmp_id, nat_mapping_icmp);
+            }
+
+            /* rewrite ICMP ID */
+            icmp_hdr->icmp_id = nat_entry->aux_ext; /* external ID */
+            /* compute checksum of ICMP header */
+            icmp_hdr->icmp_sum = 0;
+            icmp_hdr->icmp_sum = cksum(icmp_hdr, sizeof(sr_icmp_hdr_t) + icmp_datalen);
+
+            /* rewrite IP address */
+            ip_hdr->ip_src = nat_entry->ip_ext;/* external IP */
+
+            /* find routing entry matching with destination ip address */
+            routing_entry = sr_longest_prefix_match(sr, dst_ip);
+            if(routing_entry == NULL)
+            {
+                fprintf(stderr, "cannot find routing entry matching with destination Ip address\n");
+                return NET_UNREACHABLE;// return and send icmp (net unreachable)
+            }
+
+            /* match -> find MAC address*/
+            interface_entry = sr_get_interface(sr, routing_entry->interface);
+            iface = interface_entry->name;
+
+            /*ARP lookup*/
+            arp_entry = sr_arpcache_lookup(&sr->cache, dst_ip);
+            if (arp_entry) {
+                /* update source and destination MAC address */
+                memcpy(eth_hdr->ether_shost, interface_entry->addr, ETHER_ADDR_LEN);
+                memcpy(eth_hdr->ether_dhost, arp_entry->mac, ETHER_ADDR_LEN);
+            } 
+            else {
+                fprintf(stderr, "MAC not found in ARP cache, queuing this request\n");
+                req = sr_arpcache_queuereq(&sr->cache, ip_hdr->ip_dst, copy_buf, len, iface);
+                sr_handle_arp_req(sr, req);
+                return 0;
+            }
+
+            /* Update ttl and checksum value after finding arp entry */
+            ip_hdr->ip_ttl--;
+            ip_hdr->ip_sum = 0;
+            ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
+            
+            /* forwading packet */
+            ret = sr_send_packet(sr, copy_buf, len, iface);
+            free(copy_buf);
+        }
+    }
+    else if(ip_hdr->ip_p == ip_protocol_tcp)
+    {
+        /* TCP packet */
+        tcphdr_t *tcp_hdr = (tcphdr_t *)(copy_buf + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
+        uint32_t tcp_datalen = len - (uint32_t)(sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t) + sizeof(tcphdr_t));
+        if(inet_aton(ext_ip_eth2,&ext_addr) == 0)
+        {
+            fprintf(stderr,"[Error]: cannot convert %s to valid IP\n", ext_ip_eth2);
+            return -1; 
+        }
+
+        /* This version does not support hairpinning */
+        if((dst_ip == ext_addr.s_addr))/*hard code for this lab*/
+        {
+            /* Inbound */
+            /* NAT lookup */
+            nat_entry = sr_nat_lookup_external(&sr->nat, tcp_hdr->th_dport, nat_mapping_tcp);
+            if(!nat_entry)
+            {
+                /* there are no mapping */
+
+
+            }
+
+            /* rewrite TCP Port */
+            tcp_hdr->th_sport = nat_entry->aux_ext; /* external source port (random) (network-byte ordered) */
+            /* rewrite IP address */
+            ip_hdr->ip_src = nat_entry->ip_ext;/* external IP address (network-byte ordered) */
+            /* compute checksum of TCP header and Pseudoheader */
+            tcp_hdr->th_sum = 0;
+            tcp_hdr->th_sum = cksum_tcp(ip_hdr, tcp_datalen);
+
+            /* find routing entry matching with destination ip address */
+            routing_entry = sr_longest_prefix_match(sr, dst_ip);
+            if(routing_entry == NULL)
+            {
+                fprintf(stderr, "cannot find routing entry matching with destination Ip address\n");
+                return NET_UNREACHABLE;// return and send icmp (net unreachable)
+            }
+
+            /* match -> find MAC address*/
+            interface_entry = sr_get_interface(sr, routing_entry->interface);
+            iface = interface_entry->name;
+
+            /*ARP lookup*/
+            arp_entry = sr_arpcache_lookup(&sr->cache, dst_ip);
+            if (arp_entry) {
+                /* update source and destination MAC address */
+                memcpy(eth_hdr->ether_shost, interface_entry->addr, ETHER_ADDR_LEN);
+                memcpy(eth_hdr->ether_dhost, arp_entry->mac, ETHER_ADDR_LEN);
+            } 
+            else {
+                fprintf(stderr, "MAC not found in ARP cache, queuing this request\n");
+                req = sr_arpcache_queuereq(&sr->cache, ip_hdr->ip_dst, copy_buf, len, iface);
+                sr_handle_arp_req(sr, req);
+                return 0;
+            }
+
+            /* Update ttl and checksum value after finding arp entry */
+            ip_hdr->ip_ttl--;
+            ip_hdr->ip_sum = 0;
+            ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
+            
+            /* forwading packet */
+            ret = sr_send_packet(sr, copy_buf, len, iface);
+            free(copy_buf);
+        }
+        else /* Hard code for this lab */
+        {
+            /* Outbound */
+            /* NAT lookup */
+            nat_entry = sr_nat_lookup_internal(&sr->nat, ip_hdr->ip_src, tcp_hdr->th_sport, nat_mapping_tcp);
+            if(!nat_entry)
+            {
+                /* allocate new mapping */
+                nat_entry = sr_nat_insert_mapping(&sr->nat, ip_hdr->ip_src, tcp_hdr->th_sport, nat_mapping_tcp);
+            }
+
+            /* rewrite TCP Port */
+            tcp_hdr->th_sport = nat_entry->aux_ext; /* external source port (random) (network-byte ordered) */
+            /* rewrite IP address */
+            ip_hdr->ip_src = nat_entry->ip_ext;/* external IP address (network-byte ordered) */
+            /* compute checksum of TCP header */
+            tcp_hdr->th_sum = 0;
+            tcp_hdr->th_sum = cksum_tcp(ip_hdr, tcp_datalen);
+            
+
+            /* find routing entry matching with destination ip address */
+            routing_entry = sr_longest_prefix_match(sr, dst_ip);
+            if(routing_entry == NULL)
+            {
+                fprintf(stderr, "cannot find routing entry matching with destination Ip address\n");
+                return NET_UNREACHABLE;// return and send icmp (net unreachable)
+            }
+
+            /* match -> find MAC address*/
+            interface_entry = sr_get_interface(sr, routing_entry->interface);
+            iface = interface_entry->name;
+
+            /*ARP lookup*/
+            arp_entry = sr_arpcache_lookup(&sr->cache, dst_ip);
+            if (arp_entry) {
+                /* update source and destination MAC address */
+                memcpy(eth_hdr->ether_shost, interface_entry->addr, ETHER_ADDR_LEN);
+                memcpy(eth_hdr->ether_dhost, arp_entry->mac, ETHER_ADDR_LEN);
+            } 
+            else {
+                fprintf(stderr, "MAC not found in ARP cache, queuing this request\n");
+                req = sr_arpcache_queuereq(&sr->cache, ip_hdr->ip_dst, copy_buf, len, iface);
+                sr_handle_arp_req(sr, req);
+                return 0;
+            }
+
+            /* Update ttl and checksum value after finding arp entry */
+            ip_hdr->ip_ttl--;
+            ip_hdr->ip_sum = 0;
+            ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
+            
+            /* forwading packet */
+            ret = sr_send_packet(sr, copy_buf, len, iface);
+            free(copy_buf);
+        }
+    }
+    return ret;
 }
 int checking_packet(uint8_t *packet, unsigned int len)
 {
@@ -615,13 +847,16 @@ void sr_handlepacket(struct sr_instance* sr,
                         return;
                     }
                     printf("*** <- Sent ICMP reply \n");
-                    ret = send_icmp_reply(sr, interface, ntohs(ip_hdr->ip_id), ether_hdr->ether_shost, ether_hdr->ether_dhost,
-                                        ntohl(ip_hdr->ip_src),ntohl(ip_hdr->ip_dst), icmp_data, icmp_datalen, ECHO_REPLY);
+                    ret = send_icmp_reply(sr, interface, ntohs(ip_hdr->ip_id), 
+                                        ether_hdr->ether_shost, ether_hdr->ether_dhost,
+                                        ntohl(ip_hdr->ip_src),ntohl(ip_hdr->ip_dst), 
+                                        ntohs(icmp_hdr->icmp_id), ntohs(icmp_hdr->icmp_seqno), 
+                                        icmp_data, icmp_datalen, ECHO_REPLY);
                     if(-1 == ret)
                         fprintf(stderr, "[ERROR]: Sending icmp reply\n");
                     return;
                 }
-                else
+                else if (ip_hdr->ip_p == ip_protocol_tcp)
                 {
                     /* UDP/ TCP: unsupported protocol ->send_icmp_error_notify */
                     printf("*** <- Sent ICMP notify: Port unreachable \n");
