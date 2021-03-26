@@ -38,17 +38,17 @@ uint16_t cksum (const void *_data, int len) {
  * returns: The checksum in network order.
  */
 uint16_t cksum_tcp(sr_ip_hdr_t *packet, uint16_t len) {
-  tcphdr_t *tcp_hdr = (tcphdr_t *) ((uint8_t *) packet + sizeof(sr_ip_hdr_t));
+  tcphdr_t *tcp_hdr = (tcphdr_t *) ((uint8_t *) packet + IP_HDR_SIZE);
 
   /* Construct pseudoheader. */
   tcp_pseudoheader_t *phdr = calloc(TCP_PSEUDOHDR_SIZE + len, 1);
   phdr->src_addr = packet->ip_src;
   phdr->dst_addr = packet->ip_dst;
   phdr->protocol = IPPROTO_TCP;
-  phdr->tcp_len = htons(sizeof(tcphdr_t) + len);
+  phdr->tcp_len = htons(TCP_HDR_SIZE + len);
 
   /* Append TCP segment and compute checksum. */
-  memcpy(&(phdr->tcp_hdr), tcp_hdr, sizeof(tcphdr_t) + len);
+  memcpy(&(phdr->tcp_hdr), tcp_hdr, TCP_HDR_SIZE + len);
   uint16_t result = cksum(phdr, len + TCP_PSEUDOHDR_SIZE);
   free(phdr);
   return result;
@@ -188,7 +188,7 @@ void print_hdr_arp(uint8_t *buf) {
 void print_hdrs(uint8_t *buf, uint32_t length) {
 
   /* Ethernet */
-  int minlength = sizeof(sr_ethernet_hdr_t);
+  int minlength = ETHERNET_HDR_SIZE;
   if (length < minlength) {
     fprintf(stderr, "Failed to print ETHERNET header, insufficient length\n");
     return;
@@ -198,21 +198,21 @@ void print_hdrs(uint8_t *buf, uint32_t length) {
   print_hdr_eth(buf);
 
   if (ethtype == ethertype_ip) { /* IP */
-    minlength += sizeof(sr_ip_hdr_t);
+    minlength += IP_HDR_SIZE;
     if (length < minlength) {
       fprintf(stderr, "Failed to print IP header, insufficient length\n");
       return;
     }
 
-    print_hdr_ip(buf + sizeof(sr_ethernet_hdr_t));
-    uint8_t ip_proto = ip_protocol(buf + sizeof(sr_ethernet_hdr_t));
+    print_hdr_ip(buf + ETHERNET_HDR_SIZE);
+    uint8_t ip_proto = ip_protocol(buf + ETHERNET_HDR_SIZE);
 
     if (ip_proto == ip_protocol_icmp) { /* ICMP */
       minlength += sizeof(sr_icmp_hdr_t);
       if (length < minlength)
         fprintf(stderr, "Failed to print ICMP header, insufficient length\n");
       else
-        print_hdr_icmp(buf + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
+        print_hdr_icmp(buf + ETHERNET_HDR_SIZE + IP_HDR_SIZE);
     }
   }
   else if (ethtype == ethertype_arp) { /* ARP */
@@ -220,7 +220,7 @@ void print_hdrs(uint8_t *buf, uint32_t length) {
     if (length < minlength)
       fprintf(stderr, "Failed to print ARP header, insufficient length\n");
     else
-      print_hdr_arp(buf + sizeof(sr_ethernet_hdr_t));
+      print_hdr_arp(buf + ETHERNET_HDR_SIZE);
   }
   else {
     fprintf(stderr, "Unrecognized Ethernet Type: %d\n", ethtype);

@@ -104,9 +104,6 @@ struct sr_icmp_t3_hdr {
 } __attribute__ ((packed)) ;
 typedef struct sr_icmp_t3_hdr sr_icmp_t3_hdr_t;
 
-
-
-
 /*
  * Structure of an internet header, naked of options.
  */
@@ -274,6 +271,10 @@ struct tcp_pseudoheader {
   tcphdr_t tcp_hdr;         /* TCP header */
 } __attribute__((packed));
 typedef struct tcp_pseudoheader tcp_pseudoheader_t;
+
 #define TCP_PSEUDOHDR_SIZE sizeof(tcp_pseudoheader_t)
+#define IP_HDR_SIZE sizeof(sr_ip_hdr_t)
+#define ETHERNET_HDR_SIZE sizeof(sr_ethernet_hdr_t)
+#define TCP_HDR_SIZE sizeof(tcphdr_t)
 
 #endif /* -- SR_PROTOCOL_H -- */

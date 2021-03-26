@@ -37,6 +37,8 @@ struct sr_if;
 struct sr_rt;
 
 /* define MACRO value for sending type 3 icmp*/
+extern char *ext_ip_eth2;
+extern char *int_ip_eth1;
 
 #define ECHO_REPLY 0
 #define NET_UNREACHABLE 1

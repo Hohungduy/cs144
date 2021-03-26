@@ -6,8 +6,8 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
-static char *ext_ip_eth2 = "184.72.104.217";
-static char *int_ip_eth1 = "10.0.1.1";
+char *ext_ip_eth2 = "184.72.104.217";
+char *int_ip_eth1 = "10.0.1.1";
 int sr_nat_init(struct sr_nat *nat) { /* Initializes the nat */
 
   assert(nat);
@@ -38,19 +38,64 @@ int sr_nat_destroy(struct sr_nat *nat) {  /* Destroys the nat (free memory) */
   pthread_mutex_lock(&(nat->lock));
 
   /* free nat memory here */
-  struct sr_nat_mapping* mapping = NULL, *next_mapping =NULL;
+  struct sr_nat_mapping* mapping = NULL, *next_mapping = NULL;
+  struct sr_nat_connection *conn = NULL, *next_conn = NULL;
+  if((mapping = nat->mappings) == NULL)
+    goto end;
   for(mapping = nat->mappings; mapping != NULL; mapping = next_mapping)
   {
     next_mapping = mapping->next;
     if(mapping)
+    {
+      if((conn = mapping->conns) == NULL)
+        goto next;
+      for(conn = mapping->conns; conn != NULL; conn = next_conn)
+      {
+        next_conn = conn->next;
+        if(conn)
+          free(conn);
+      }
+next:
       free(mapping);
+    }
   }
+end:
   pthread_kill(nat->thread, SIGKILL);
   return pthread_mutex_destroy(&(nat->lock)) &&
     pthread_mutexattr_destroy(&(nat->attr));
-
 }
 
+void sr_nat_destroy_mapping(struct sr_nat *nat, struct sr_nat_mapping *entry)
+{
+  pthread_mutex_lock(&(nat->lock));
+  if(entry){
+    struct sr_nat_mapping *mapping = NULL, *next_mapping = NULL, *prev_mapping = NULL;
+    for(mapping = nat->mappings; mapping != NULL; mapping = mapping->next){
+      if(mapping == entry) {
+        if(prev_mapping){
+          next_mapping = mapping->next;
+          prev_mapping->next = next_mapping;
+        }
+        else{
+          next_mapping = mapping->next;
+          nat->mappings = next_mapping;
+        }
+        break;
+      }
+      prev_mapping = mapping;
+    }
+    struct sr_nat_connection *conn =NULL, *next_conn = NULL;
+    for(conn = mapping->conns; conn; conn = next_conn)
+    {
+      next_conn = conn->next;
+      if(conn)
+        free(conn);
+    }
+    free(entry);
+  }
+
+  pthread_mutex_unlock(&(nat->lock));
+}
 void *sr_nat_timeout(void *nat_ptr) {  /* Periodic Timout handling */
   struct sr_nat *nat = (struct sr_nat *)nat_ptr;
   while (1) {
@@ -61,14 +106,47 @@ void *sr_nat_timeout(void *nat_ptr) {  /* Periodic Timout handling */
 
     /* handle periodic tasks here */
     struct sr_nat_mapping *mapping_entry = NULL;
+    struct sr_nat_connection *conn = NULL, *next_conn = NULL;
     if(!(mapping_entry = nat->mappings))
+    {
+      pthread_mutex_unlock(&(nat->lock));
       return NULL; /* no entry in mapping table */
+    }
     for(mapping_entry = nat->mappings; mapping_entry != NULL; mapping_entry = mapping_entry->next)
     {
-      if((mapping_entry->type == nat_mapping_icmp) && (mapping_entry->valid)&& (difftime(curtime, mapping_entry->last_updated) > ICMP_MAPPING_TIMEOUT))
+      if((mapping_entry->type == nat_mapping_icmp) && (mapping_entry->valid) && (difftime(curtime, mapping_entry->last_updated) > ICMP_MAPPING_TIMEOUT))
       {
         mapping_entry->valid = false;
       }
+      if((mapping_entry->type == nat_mapping_tcp) && (mapping_entry->valid))
+      {
+        if((conn = mapping_entry->conns) == NULL)
+          goto next;
+        for(conn = mapping_entry->conns; conn; conn = next_conn)
+        {
+          next_conn = conn->next;
+          if(conn->state == state_established)
+          {
+            if(difftime(curtime, conn->last_established) >= TCP_ESTABLISHED_TIMEOUT)
+            {
+              sr_destroy_nat_tcpconnection(nat, mapping_entry, conn);
+            }
+          }
+          else if(conn->state == state_transitory)
+          {
+            if(difftime(curtime, conn->last_transitory) >= TCP_TRANSITORY)
+            {
+              sr_destroy_nat_tcpconnection(nat, mapping_entry, conn);
+            }
+          }
+          if((difftime(curtime, conn->last_transitory) >= TCP_TRANSITORY_UNSOLICITED) && 
+            (conn->receive_SYN_ext == true) && (conn->state == state_transitory))
+          
+        }
+      }
+next:
+      if(mapping_entry->valid == false)
+        sr_nat_destroy_mapping(nat, mapping_entry);
     }
     pthread_mutex_unlock(&(nat->lock));
   }
@@ -86,7 +164,10 @@ struct sr_nat_mapping *sr_nat_lookup_external(struct sr_nat *nat,
   struct sr_nat_mapping *copy = NULL, *mapping_entry = NULL, *match_entry = NULL;
   /* mapping entry: iterator, entry: match entry: the entry that we want, copy: The copy of entry */
   if(!(mapping_entry = nat->mappings))
+  {
+    pthread_mutex_unlock(&(nat->lock));
     return NULL; /* no entry */
+  }
   for(mapping_entry = nat->mappings; mapping_entry != NULL; mapping_entry = mapping_entry->next)
   {
     if((mapping_entry->aux_int == aux_ext) && (mapping_entry->valid = true))
@@ -115,7 +196,10 @@ struct sr_nat_mapping *sr_nat_lookup_internal(struct sr_nat *nat,
   struct sr_nat_mapping *copy = NULL, *mapping_entry = NULL, *match_entry = NULL;
   /* mapping entry: iterator, entry: match entry: the entry that we want, copy: The copy of entry */
   if(!(mapping_entry = nat->mappings))
+  {
+    pthread_mutex_unlock(&(nat->lock));
     return NULL; /* no entry */
+  }
   for(mapping_entry = nat->mappings; mapping_entry != NULL; mapping_entry = mapping_entry->next)
   {
     if((mapping_entry->ip_int == ip_int) && (mapping_entry->aux_int == aux_int) && 
@@ -166,11 +250,13 @@ struct sr_nat_mapping *sr_nat_insert_mapping(struct sr_nat *nat,
     if(inet_aton(ext_ip_eth2,&ext_addr) == 0)
     {
       fprintf(stderr,"[Error]: cannot convert %s to valid IP\n", ext_ip_eth2);
+      pthread_mutex_unlock(&(nat->lock));
       exit(EXIT_FAILURE); 
     }
     mapping_entry->ip_ext = htonl(ext_addr.s_addr);/* network byte ordered */
     mapping_entry->aux_ext = htons(generate_random(1024, 65535));/* network byte ordered */
     mapping_entry->valid = true;
+    mapping_entry->last_updated = time(NULL);
     /* insert this mapping into list */
     mapping_entry->next = nat->mappings;
     nat->mappings = mapping_entry;
@@ -184,4 +270,303 @@ struct sr_nat_mapping *sr_nat_insert_mapping(struct sr_nat *nat,
   /* write add connection */
   pthread_mutex_unlock(&(nat->lock));
   return copy;
+}
+
+/*lookup connectiun matching the specific criteria: 4 tuple*/
+struct sr_nat_connection* sr_lookup_nat_tcpconnection(struct sr_nat *nat, struct sr_nat_mapping *mapping, sr_ip_hdr_t *ip_hdr, pkt_direct_t direct)
+{
+  pthread_mutex_lock(&(nat->lock));
+
+  tcphdr_t *tcp_hdr = (tcphdr_t*)(ip_hdr + IP_HDR_SIZE);
+  struct sr_nat_connection *conn = NULL, *next_conn = NULL, *copy = NULL;
+
+  if(!(conn = mapping->conns))
+  {
+    /* no connection */
+    pthread_mutex_unlock(&(nat->lock));
+    return NULL;
+  }
+  for(conn = mapping->conns; conn != NULL; conn = next_conn)
+  {
+    next_conn = conn->next;
+    if(direct == inbound)
+    {
+      if((conn->int_conn_ip == mapping->ip_int) && (conn->ext_conn_ip == ip_hdr->ip_src) 
+      && (conn->int_conn_port == mapping->aux_int) && (conn->int_conn_port == tcp_hdr->th_sport))
+      {
+        break;
+      }
+    }
+    else if (direct == outbound)
+    {
+      if((conn->int_conn_ip == mapping->ip_int) && (conn->ext_conn_ip == ip_hdr->ip_dst) 
+      && (conn->int_conn_port == mapping->aux_int) && (conn->int_conn_port == tcp_hdr->th_dport))
+      {
+        break;
+      }
+    }
+  }
+  if(conn)
+  {
+    copy = (struct sr_nat_connection*)calloc(1, sizeof(struct sr_nat_connection));
+    memcpy(copy, conn, sizeof(struct sr_nat_connection));
+  }
+  pthread_mutex_unlock(&(nat->lock));
+  return copy;
+}
+
+/* Insert new connection and its state 
+  return NULL if this is not SYN packet*/
+struct sr_nat_connection* sr_insert_nat_tcpconnection(struct sr_nat *nat, struct sr_nat_mapping *mapping, sr_ip_hdr_t *ip_hdr, conn_state_t state, pkt_direct_t direct)
+{
+  pthread_mutex_lock(&(nat->lock));
+  srand(time(NULL));
+  tcphdr_t *tcp_hdr = (tcphdr_t*)(ip_hdr + IP_HDR_SIZE);
+  struct sr_nat_connection *conn = NULL, *copy = NULL;
+
+  for(conn = mapping->conns; conn != NULL; conn = conn->next)
+  {
+    if(direct == inbound)
+    {
+      if((conn->int_conn_ip == mapping->ip_int) && (conn->ext_conn_ip == ip_hdr->ip_src) 
+      && (conn->int_conn_port == mapping->aux_int) && (conn->ext_conn_port == tcp_hdr->th_sport))
+      {
+        break;
+      }
+    }
+    else if (direct == outbound)
+    {
+      if((conn->int_conn_ip == mapping->ip_int) && (conn->ext_conn_ip == ip_hdr->ip_dst) 
+      && (conn->int_conn_port == mapping->aux_int) && (conn->ext_conn_port == tcp_hdr->th_dport))
+      {
+        break;
+      }
+    }
+  }
+  /* If it was not found -> there are no connection matching with this criteria */
+  if(!conn)
+  {
+    conn = (struct sr_nat_connection *)calloc(1, sizeof(struct sr_nat_connection));
+    /* init internal ip/port */
+    conn->int_conn_ip = mapping->ip_int;
+    conn->int_conn_port = mapping->aux_int;
+    if(direct == inbound)
+    {
+      /* inbound */
+      /* init external ip/port */
+      conn->ext_conn_ip = ip_hdr->ip_src;
+      conn->ext_conn_port = tcp_hdr->th_sport;
+
+      if(tcp_hdr->th_flags & TH_SYN)
+      {
+        /* init external seqno and its state*/
+        conn->receive_SYN_ext = true;
+        /* remeber check this fields after returning
+        if it is set -> dont forward it
+        */
+        conn->init_ext_seqno = tcp_hdr->th_seq;
+        conn->init_int_seqno = 0;
+        conn->last_transitory = time(NULL);
+        conn->state = state_transitory;
+      }
+      else
+      {
+        fprintf(stderr, "This is not SYN packet \n");
+        free(conn);
+        pthread_mutex_unlock(&(nat->lock));
+        return NULL;
+      }
+    }
+    else{
+      /* outbound */
+      /* init external ip/port */
+      conn->ext_conn_ip = ip_hdr->ip_dst;
+      conn->ext_conn_port = tcp_hdr->th_dport;
+      if(tcp_hdr->th_flags & TH_SYN)
+      {
+        conn->receive_SYN_int = true;
+        conn->init_int_seqno = tcp_hdr->th_seq;
+        conn->init_ext_seqno = 0;
+        conn->last_transitory = time(NULL);
+        conn->state = state_transitory;
+      }
+      else
+      {
+        fprintf(stderr, "This is not SYN packet \n");
+        free(conn);
+        pthread_mutex_unlock(&(nat->lock));
+        return NULL;
+      }
+    }
+  }
+  /*  make a copy and return it */
+  if(conn)
+  {
+    copy = (struct sr_nat_connection *)calloc(1, sizeof(struct sr_nat_connection));
+    memcpy(copy, conn, sizeof(struct sr_nat_connection));
+  }
+  pthread_mutex_unlock(&(nat->lock));
+  return copy;
+}
+
+/* Insert new connection and its state 
+  return NULL if this is not SYN packet*/
+int sr_update_nat_tcpconnection(struct sr_nat *nat, struct sr_nat_connection *conn, sr_ip_hdr_t *ip_hdr, conn_state_t state, pkt_direct_t direct)
+{
+  pthread_mutex_lock(&(nat->lock));
+  srand(time(NULL));
+  
+  tcphdr_t *tcp_hdr = (tcphdr_t*)(ip_hdr + IP_HDR_SIZE);
+  struct sr_nat_connection *conn = NULL, *copy = NULL;
+  time_t curtime = time(NULL);
+  if(tcp_hdr->th_flags & TH_SYN)
+  {
+    if(direct == inbound)
+    {
+      /*inbound*/
+      if(tcp_hdr->th_flags & TH_ACK)
+      {
+        /*SYN-ACK */
+        if(tcp_hdr->th_ack == (conn->init_int_seqno + 1))
+        {
+          /* valid ack no */
+          conn->receive_SYN_ACK_ext = true;
+          conn->init_ext_seqno = tcp_hdr->th_seq;
+        }
+        else
+        {
+          fprintf(stderr, "error when receiving SYN-ACK pkt, no matching ackno with previous seqno in previous SYN packets\n");
+          pthread_mutex_unlock(&(nat->lock));
+          return -1;
+        }
+      }
+      else 
+      { /* only SYN */
+        conn->receive_SYN_ext = true;
+        conn->init_ext_seqno = tcp_hdr->th_seq;
+      }
+    }
+    else
+    {
+      /*outbound */
+      if(tcp_hdr->th_flags & TH_ACK)
+      {
+        /* SYN-ACK pkt*/
+        if(tcp_hdr->th_ack == (conn->init_ext_seqno + 1))
+        {
+          /* valid ack no */
+          conn->receive_SYN_ACK_int = true;
+          conn->init_int_seqno = tcp_hdr->th_seq;
+        }
+        else
+        {
+          fprintf(stderr, "error when receiving SYN-ACK pkt, no matching ackno with previous seqno in previous SYN packets\n");
+          pthread_mutex_unlock(&(nat->lock));
+          return -1;
+        }
+      }
+      else
+      { /* SYN pkt */
+        conn->receive_SYN_int = true;
+        if((difftime(curtime, conn->last_transitory) < TCP_TRANSITORY_UNSOLICITED) && 
+        (conn->receive_SYN_ext == true) && (conn->state == state_transitory))
+        {
+          conn->receive_SYN_ext = false; /*discard outbound SYN */
+        }
+      }
+    }
+
+    if(conn->state == state_established)
+    {
+      /* this SYN pkt use for inspect if the host die or not */
+      conn->last_established = time(NULL); /* reset established idle timeout */
+    }
+    else
+    {
+      if(conn->receive_SYN_int && conn->receive_SYN_ext && 
+      conn->receive_SYN_ACK_ext && conn->receive_SYN_ACK_int)
+      {
+        conn->state = state_established;
+        conn->simultaneous_open = true;
+        conn->last_established = time(NULL);
+        fprintf(stderr, "simultenous open !\n");
+        conn->simultaneous_open = true;
+      }
+    }
+  }
+  if(tcp_hdr->th_flags & TH_ACK)
+  {
+    if(direct == inbound)
+    {
+      /* inbound */
+      if(conn->state == state_established)
+      {
+        /* this SYN pkt use for inspect if the host die or not */
+        conn->last_established = time(NULL); /* reset established idle timeout */
+      }
+      else
+      {
+        if(conn->receive_SYN_ext && conn->receive_SYN_ACK_int)
+        {
+          conn->state = state_established;
+          conn->last_established = time(NULL); /* start established idle timeout */
+        }
+      }
+    }
+    else
+    {
+      /* outbound */
+      if(conn->state == state_established)
+      {
+        /* this SYN pkt use for inspect if the host die or not */
+        conn->last_established = time(NULL); /* reset established idle timeout */
+      }
+      else
+      {
+        if(conn->receive_SYN_int && conn->receive_SYN_ACK_ext)
+        {
+          conn->state = state_established;
+          conn->last_established = time(NULL); /* start established idle timeout */
+        }
+      }
+    }
+  }
+
+  pthread_mutex_unlock(&(nat->lock));
+  return 0;
+}
+
+/* Destroy the specific connection */
+int sr_destroy_nat_tcpconnection(struct sr_nat *nat, struct sr_nat_mapping *mapping, struct sr_nat_connection *conn)
+{
+  pthread_mutex_lock(&(nat->lock));
+  struct sr_nat_connection *conn_entry = NULL, *next_conn_entry = NULL, *prev_conn_entry = NULL;
+  if((conn_entry = mapping->conns) == NULL)
+  {
+    fprintf(stderr, "no entry! - cannot delete\n");
+    pthread_mutex_unlock(&(nat->lock));
+    return 0;
+  }
+  if(conn)
+  {
+    for(conn_entry = mapping->conns; conn_entry != NULL; conn_entry = conn_entry->next)
+    {
+      if((conn_entry->int_conn_ip == conn->int_conn_ip) && (conn_entry->int_conn_port == conn->int_conn_port)
+      && (conn_entry->ext_conn_ip == conn->ext_conn_ip) && (conn_entry->ext_conn_port == conn->ext_conn_port))
+      {
+        if(prev_conn_entry){
+          next_conn_entry = conn_entry->next;
+          prev_conn_entry->next = next_conn_entry;
+        }
+        else{
+          next_conn_entry = conn_entry->next;
+          mapping->conns = next_conn_entry;
+        }
+        break;
+      }
+    }
+    free(conn_entry);
+  }
+  pthread_mutex_unlock(&(nat->lock));
+  return 0;
 }

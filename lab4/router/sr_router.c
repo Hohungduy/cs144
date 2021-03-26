@@ -49,9 +49,6 @@ uint8_t broadcast_ether_addr[ETHER_ADDR_LEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x
 const char *internal_iface = "eth1";
 const char *external_iface = "eth2";
 
-static char *ext_ip_eth2 = "184.72.104.217";
-static char *int_ip_eth1 = "10.0.1.1";
-
 /* -----------------Declaration of Static Function---------------------*/
 static sr_icmp_t3_hdr_t * create_icmp_type3_header(void *icmp_data, int TypeCode_icmp);
 static sr_icmp_hdr_t *create_icmp_header(uint16_t icmp_id, uint16_t icmp_seqno, uint8_t *icmp_data, uint16_t icmp_data_len);
@@ -147,14 +144,14 @@ static sr_icmp_hdr_t *create_icmp_header(uint16_t icmp_id, uint16_t icmp_seqno, 
 static sr_ip_hdr_t *create_ip_header(uint16_t ip_id,  uint32_t dst_ip, uint32_t src_ip,
                                      int TypeCode_icmp, uint16_t icmp_data_len)
 {
-    sr_ip_hdr_t *ip_icmp_hdr = (sr_ip_hdr_t *)calloc(1, sizeof(sr_ip_hdr_t));
+    sr_ip_hdr_t *ip_icmp_hdr = (sr_ip_hdr_t *)calloc(1, IP_HDR_SIZE);
     ip_icmp_hdr->ip_hl = DEFAULT_IP_HL;
     ip_icmp_hdr->ip_v = IPV4_VERSION;
     ip_icmp_hdr->ip_tos = DEFAULT_TOS;
     if(TypeCode_icmp != ECHO_REPLY)
-        ip_icmp_hdr->ip_len = (uint16_t)(htons(sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_t3_hdr_t)));
+        ip_icmp_hdr->ip_len = (uint16_t)(htons(IP_HDR_SIZE + sizeof(sr_icmp_t3_hdr_t)));
     else
-        ip_icmp_hdr->ip_len = (uint16_t)(htons(sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_hdr_t)+ icmp_data_len));// send echo reply
+        ip_icmp_hdr->ip_len = (uint16_t)(htons(IP_HDR_SIZE + sizeof(sr_icmp_hdr_t)+ icmp_data_len));// send echo reply
     ip_icmp_hdr->ip_id = (uint16_t)(htons(ip_id)); /*plus 1: research more */
     ip_icmp_hdr->ip_off = (uint16_t)(htons(IP_DF));
     ip_icmp_hdr->ip_ttl = DEFAULT_TTL;
@@ -168,7 +165,7 @@ static sr_ip_hdr_t *create_ip_header(uint16_t ip_id,  uint32_t dst_ip, uint32_t 
 
     ip_icmp_hdr->ip_dst = (uint32_t)htonl(dst_ip); 
     ip_icmp_hdr->ip_sum = 0;
-    ip_icmp_hdr->ip_sum = cksum(ip_icmp_hdr, sizeof(sr_ip_hdr_t));
+    ip_icmp_hdr->ip_sum = cksum(ip_icmp_hdr, IP_HDR_SIZE);
     return ip_icmp_hdr;
 }/* -- create IP header --*/
 
@@ -179,7 +176,7 @@ static sr_ip_hdr_t *create_ip_header(uint16_t ip_id,  uint32_t dst_ip, uint32_t 
 */
 static sr_ethernet_hdr_t *create_ethernet_header(uint8_t *dest_host_addr, uint8_t *src_host_addr, uint16_t ether_type)
 {
-    sr_ethernet_hdr_t *ether_icmp_hdr = (sr_ethernet_hdr_t *)calloc(1, sizeof(sr_ethernet_hdr_t));
+    sr_ethernet_hdr_t *ether_icmp_hdr = (sr_ethernet_hdr_t *)calloc(1, ETHERNET_HDR_SIZE);
     memcpy(ether_icmp_hdr->ether_dhost, dest_host_addr, ETHER_ADDR_LEN);
     memcpy(ether_icmp_hdr->ether_shost, src_host_addr, ETHER_ADDR_LEN);
     if(ether_type == ethertype_ip)
@@ -239,11 +236,11 @@ int send_icmp_error_notify(struct sr_instance *sr, sr_ethernet_hdr_t *ether_hdr,
     sr_ethernet_hdr_t *ether_icmp_hdr = create_ethernet_header(ether_hdr->ether_shost, interface->addr, ethertype_ip);
 
     /* create packet and send*/
-    unsigned int buflen = sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_t3_hdr_t);
+    unsigned int buflen = ETHERNET_HDR_SIZE + IP_HDR_SIZE + sizeof(sr_icmp_t3_hdr_t);
     uint8_t *buf = (uint8_t *)calloc(1, buflen);
-    memcpy(buf, ether_icmp_hdr, sizeof(sr_ethernet_hdr_t));
-    memcpy(buf + sizeof(sr_ethernet_hdr_t), ip_icmp_hdr, sizeof(sr_ip_hdr_t));
-    memcpy(buf + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t), icmp_hdr, sizeof(sr_icmp_t3_hdr_t));
+    memcpy(buf, ether_icmp_hdr, ETHERNET_HDR_SIZE);
+    memcpy(buf + ETHERNET_HDR_SIZE, ip_icmp_hdr, IP_HDR_SIZE);
+    memcpy(buf + ETHERNET_HDR_SIZE + IP_HDR_SIZE, icmp_hdr, sizeof(sr_icmp_t3_hdr_t));
 
     #ifdef DEBUG_PRINT
     print_hdrs(buf, buflen);
@@ -283,11 +280,11 @@ int send_icmp_reply(struct sr_instance *sr, char *iface, uint16_t ip_id,
     sr_ethernet_hdr_t *ether_icmp_hdr = create_ethernet_header(ether_dhost, ether_shost, ethertype_ip);
 
     /* create packet and send*/
-    unsigned int buflen = sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_hdr_t) + icmp_data_len;
+    unsigned int buflen = ETHERNET_HDR_SIZE + IP_HDR_SIZE + sizeof(sr_icmp_hdr_t) + icmp_data_len;
     uint8_t *buf = (uint8_t *)calloc(1, buflen);
-    memcpy(buf, ether_icmp_hdr, sizeof(sr_ethernet_hdr_t));
-    memcpy(buf + sizeof(sr_ethernet_hdr_t), ip_icmp_hdr, sizeof(sr_ip_hdr_t));
-    memcpy(buf + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t), icmp_hdr, sizeof(sr_icmp_hdr_t) + icmp_data_len);  
+    memcpy(buf, ether_icmp_hdr, ETHERNET_HDR_SIZE);
+    memcpy(buf + ETHERNET_HDR_SIZE, ip_icmp_hdr, IP_HDR_SIZE);
+    memcpy(buf + ETHERNET_HDR_SIZE + IP_HDR_SIZE, icmp_hdr, sizeof(sr_icmp_hdr_t) + icmp_data_len);  
 
     #ifdef DEBUG_PRINT
     print_hdrs(buf, buflen);
@@ -328,10 +325,10 @@ int send_arp_request(struct sr_instance *sr, struct sr_arpreq *req)
     sr_ethernet_hdr_t *ether_hdr = create_ethernet_header(broadcast_ether_addr, interface->addr, ethertype_arp);
 
     /* Create buf for packet and send it */
-    unsigned int buflen = sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t);
+    unsigned int buflen = ETHERNET_HDR_SIZE + sizeof(sr_arp_hdr_t);
     uint8_t *buf = (uint8_t *)calloc(1, buflen);
-    memcpy(buf, ether_hdr, sizeof(sr_ethernet_hdr_t));
-    memcpy(buf + sizeof(sr_ethernet_hdr_t), arp_hdr, sizeof(sr_arp_hdr_t));
+    memcpy(buf, ether_hdr, ETHERNET_HDR_SIZE);
+    memcpy(buf + ETHERNET_HDR_SIZE, arp_hdr, sizeof(sr_arp_hdr_t));
 
     #ifdef DEBUG_PRINT
     print_hdrs(buf, buflen);
@@ -366,10 +363,10 @@ int send_arp_reply(struct sr_instance *sr, uint8_t *dst_etheraddr, uint8_t *src_
     sr_ethernet_hdr_t *ether_hdr = create_ethernet_header(dst_etheraddr, src_etheraddr, ethertype_arp);
 
     /* Create buf for packet and send it */
-    unsigned int buflen = sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t);
+    unsigned int buflen = ETHERNET_HDR_SIZE + sizeof(sr_arp_hdr_t);
     uint8_t *buf = (uint8_t *)calloc(1, buflen);
-    memcpy(buf, ether_hdr, sizeof(sr_ethernet_hdr_t));
-    memcpy(buf + sizeof(sr_ethernet_hdr_t), arp_hdr, sizeof(sr_arp_hdr_t));
+    memcpy(buf, ether_hdr, ETHERNET_HDR_SIZE);
+    memcpy(buf + ETHERNET_HDR_SIZE, arp_hdr, sizeof(sr_arp_hdr_t));
 
     #ifdef DEBUG_PRINT
     print_hdrs(buf, buflen);
@@ -407,7 +404,7 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
 	memcpy(copy_buf, packet, len);
     /* ethernet and IP header*/
 	sr_ethernet_hdr_t *eth_hdr = (sr_ethernet_hdr_t *)copy_buf;
-	sr_ip_hdr_t *ip_hdr = (sr_ip_hdr_t *)(copy_buf + sizeof(sr_ethernet_hdr_t));
+	sr_ip_hdr_t *ip_hdr = (sr_ip_hdr_t *)(copy_buf + ETHERNET_HDR_SIZE);
     /*routing entry and its interface */
     sr_rt_tt *routing_entry = NULL;
     struct sr_if *interface_entry = NULL;
@@ -417,7 +414,7 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
     struct sr_arpreq *req = NULL;
     /* nat mapping entry*/
     struct sr_nat_mapping *nat_entry = NULL;
-
+    pkt_direct_t direct;
     struct in_addr ext_addr;
     /* Check TTL (use for traceroute)*/
     if(ip_hdr->ip_ttl == 1)
@@ -430,8 +427,8 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
     if(ip_hdr->ip_p == ip_protocol_icmp)
     {
         /* IMCP packet*/
-        sr_icmp_hdr_t *icmp_hdr = (sr_icmp_hdr_t *)(copy_buf + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
-        uint32_t icmp_datalen = len - (uint32_t)(sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_hdr_t));
+        sr_icmp_hdr_t *icmp_hdr = (sr_icmp_hdr_t *)(copy_buf + ETHERNET_HDR_SIZE + IP_HDR_SIZE);
+        uint32_t icmp_datalen = len - (uint32_t)(ETHERNET_HDR_SIZE + IP_HDR_SIZE + sizeof(sr_icmp_hdr_t));
         if(inet_aton(ext_ip_eth2,&ext_addr) == 0)
         {
             fprintf(stderr,"[Error]: cannot convert %s to valid IP\n", ext_ip_eth2);
@@ -442,6 +439,7 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
         {
             /* Inbound */
             /* NAT lookup */
+            direct = inbound;
             nat_entry = sr_nat_lookup_external(&sr->nat, icmp_hdr->icmp_id, nat_mapping_icmp);
             if(!nat_entry)
             {
@@ -487,16 +485,18 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
             /* Update ttl and checksum value after finding arp entry */
             ip_hdr->ip_ttl--;
             ip_hdr->ip_sum = 0;
-            ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
+            ip_hdr->ip_sum = cksum(ip_hdr, IP_HDR_SIZE);
             
             /* forwading packet */
             ret = sr_send_packet(sr, copy_buf, len, iface);
             free(copy_buf);
+            free(nat_entry);
         }
         else/*harcode for this lab*/
         {
             /* Outbound */
             /* NAT lookup */
+            direct = outbound;
             nat_entry = sr_nat_lookup_internal(&sr->nat, ip_hdr->ip_src, icmp_hdr->icmp_id, nat_mapping_icmp);
             if(!nat_entry)
             {
@@ -542,18 +542,19 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
             /* Update ttl and checksum value after finding arp entry */
             ip_hdr->ip_ttl--;
             ip_hdr->ip_sum = 0;
-            ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
+            ip_hdr->ip_sum = cksum(ip_hdr, IP_HDR_SIZE);
             
             /* forwading packet */
             ret = sr_send_packet(sr, copy_buf, len, iface);
             free(copy_buf);
+            free(nat_entry);
         }
     }
     else if(ip_hdr->ip_p == ip_protocol_tcp)
     {
         /* TCP packet */
-        tcphdr_t *tcp_hdr = (tcphdr_t *)(copy_buf + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
-        uint32_t tcp_datalen = len - (uint32_t)(sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t) + sizeof(tcphdr_t));
+        tcphdr_t *tcp_hdr = (tcphdr_t *)(copy_buf + ETHERNET_HDR_SIZE + IP_HDR_SIZE);
+        uint32_t tcp_datalen = len - (uint32_t)(ETHERNET_HDR_SIZE + IP_HDR_SIZE + TCP_HDR_SIZE);
         if(inet_aton(ext_ip_eth2,&ext_addr) == 0)
         {
             fprintf(stderr,"[Error]: cannot convert %s to valid IP\n", ext_ip_eth2);
@@ -565,6 +566,7 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
         {
             /* Inbound */
             /* NAT lookup */
+            direct = inbound;
             nat_entry = sr_nat_lookup_external(&sr->nat, tcp_hdr->th_dport, nat_mapping_tcp);
             if(!nat_entry)
             {
@@ -610,16 +612,18 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
             /* Update ttl and checksum value after finding arp entry */
             ip_hdr->ip_ttl--;
             ip_hdr->ip_sum = 0;
-            ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
+            ip_hdr->ip_sum = cksum(ip_hdr, IP_HDR_SIZE);
             
             /* forwading packet */
             ret = sr_send_packet(sr, copy_buf, len, iface);
             free(copy_buf);
+            free(nat_entry);
         }
         else /* Hard code for this lab */
         {
             /* Outbound */
             /* NAT lookup */
+            direct = outbound;
             nat_entry = sr_nat_lookup_internal(&sr->nat, ip_hdr->ip_src, tcp_hdr->th_sport, nat_mapping_tcp);
             if(!nat_entry)
             {
@@ -665,18 +669,19 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
             /* Update ttl and checksum value after finding arp entry */
             ip_hdr->ip_ttl--;
             ip_hdr->ip_sum = 0;
-            ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
+            ip_hdr->ip_sum = cksum(ip_hdr, IP_HDR_SIZE);
             
             /* forwading packet */
             ret = sr_send_packet(sr, copy_buf, len, iface);
             free(copy_buf);
+            free(nat_entry);
         }
     }
     return ret;
 }
 int checking_packet(uint8_t *packet, unsigned int len)
 {
-    uint32_t check_len = sizeof(sr_ethernet_hdr_t); // init first header layer of packet (MAC header)
+    uint32_t check_len = ETHERNET_HDR_SIZE; // init first header layer of packet (MAC header)
     uint16_t computed_cksum = 0;
     uint16_t correct_cksum = 0;
     sr_ip_hdr_t *ip_hdr = NULL;
@@ -695,22 +700,22 @@ int checking_packet(uint8_t *packet, unsigned int len)
         uint16_t ethtype = ethertype(packet);
         if(ethtype == ethertype_ip){
             /* IP */
-            check_len += sizeof(sr_ip_hdr_t);
+            check_len += IP_HDR_SIZE;
             if (len < check_len) {
                 fprintf(stderr, "[ERROR]: Receiving packet broken (IP header)!\n");
                 return -1;
             }
 
             #ifdef DEBUG_PRINT
-            print_hdr_ip(packet + sizeof(sr_ethernet_hdr_t));
+            print_hdr_ip(packet + ETHERNET_HDR_SIZE);
             #endif
 
-            uint8_t ip_proto = ip_protocol(packet + sizeof(sr_ethernet_hdr_t));
+            uint8_t ip_proto = ip_protocol(packet + ETHERNET_HDR_SIZE);
             /*check sum*/
-            ip_hdr = (sr_ip_hdr_t *)(packet + sizeof(sr_ethernet_hdr_t));
-            correct_cksum = ip_checksum(packet + sizeof(sr_ethernet_hdr_t));
+            ip_hdr = (sr_ip_hdr_t *)(packet + ETHERNET_HDR_SIZE);
+            correct_cksum = ip_checksum(packet + ETHERNET_HDR_SIZE);
             ip_hdr->ip_sum = 0;
-            computed_cksum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
+            computed_cksum = cksum(ip_hdr, IP_HDR_SIZE);
             ip_hdr->ip_sum = correct_cksum;
             if(computed_cksum != correct_cksum)
             {
@@ -724,13 +729,13 @@ int checking_packet(uint8_t *packet, unsigned int len)
                 else
                 {
                     #ifdef DEBUG_PRINT
-                    print_hdr_icmp(packet + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
+                    print_hdr_icmp(packet + ETHERNET_HDR_SIZE + IP_HDR_SIZE);
                     #endif
                 }
-                icmp_hdr = (sr_icmp_hdr_t *)(packet + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
-                correct_cksum = icmp_checksum(packet + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
+                icmp_hdr = (sr_icmp_hdr_t *)(packet + ETHERNET_HDR_SIZE + IP_HDR_SIZE);
+                correct_cksum = icmp_checksum(packet + ETHERNET_HDR_SIZE + IP_HDR_SIZE);
                 icmp_hdr->icmp_sum = 0;
-                computed_cksum = cksum(icmp_hdr, len - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t));
+                computed_cksum = cksum(icmp_hdr, len - ETHERNET_HDR_SIZE - IP_HDR_SIZE);
                 icmp_hdr->icmp_sum = correct_cksum;
                 if(computed_cksum != correct_cksum)
                 {
@@ -743,7 +748,7 @@ int checking_packet(uint8_t *packet, unsigned int len)
         }
         else if (ethtype == ethertype_arp) { /* ARP */
             check_len += sizeof(sr_arp_hdr_t);
-            arp_hdr = (sr_arp_hdr_t *)(packet + sizeof(sr_ethernet_hdr_t));                            
+            arp_hdr = (sr_arp_hdr_t *)(packet + ETHERNET_HDR_SIZE);                            
             if (len < check_len)
                 fprintf(stderr, "[ERROR]: Failed to print ARP header, insufficient length\n");
             else
@@ -811,7 +816,7 @@ void sr_handlepacket(struct sr_instance* sr,
     struct sr_if *interface_entry = NULL;
     if(ethertype(packet) == ethertype_ip){
         /* IP */
-        ip_hdr = (sr_ip_hdr_t *)(packet + sizeof(sr_ethernet_hdr_t));
+        ip_hdr = (sr_ip_hdr_t *)(packet + ETHERNET_HDR_SIZE);
         
         #ifdef DEBUG_PRINT
         fprintf(stderr, "Source IP address: ");
@@ -832,7 +837,7 @@ void sr_handlepacket(struct sr_instance* sr,
                 if(ip_hdr->ip_p == ip_protocol_icmp)
                 {
                     /* send ICMP reply */
-                    icmp_hdr = (sr_icmp_hdr_t *)(packet + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
+                    icmp_hdr = (sr_icmp_hdr_t *)(packet + ETHERNET_HDR_SIZE + IP_HDR_SIZE);
                     if(icmp_hdr->icmp_type != ECHO_REQUEST)
                     {
                         fprintf(stderr, "[ERROR]: This is not icmp request! -> quit!\n");
@@ -840,7 +845,7 @@ void sr_handlepacket(struct sr_instance* sr,
                     }
 
                     icmp_data = (uint8_t *)(icmp_hdr + sizeof(sr_icmp_hdr_t));
-                    icmp_datalen = len - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t) -sizeof(sr_icmp_hdr_t);
+                    icmp_datalen = len - ETHERNET_HDR_SIZE - IP_HDR_SIZE -sizeof(sr_icmp_hdr_t);
                     if(icmp_datalen <= 0)
                     {
                         fprintf(stderr,"[ERROR]: No data in ICMP echo request !\n");
@@ -880,7 +885,7 @@ void sr_handlepacket(struct sr_instance* sr,
     else if(ethertype(packet) == ethertype_arp)
     {
         /* --------------------handle ARP request or ARP reply------------------ */
-        arp_hdr = (sr_arp_hdr_t *)(packet + sizeof(sr_ethernet_hdr_t));
+        arp_hdr = (sr_arp_hdr_t *)(packet + ETHERNET_HDR_SIZE);
         
         if(ntohs(arp_hdr->ar_op) == arp_op_request)
         {

@@ -30,7 +30,7 @@ void send_reply_host_unreachable(struct sr_instance *sr, struct sr_arpreq *req)
     {
         next_packet = current_packet->next;
         ether_hdr = (sr_ethernet_hdr_t *)(current_packet->buf);
-        ip_hdr = (sr_ip_hdr_t *)(current_packet->buf + sizeof(sr_ethernet_hdr_t));
+        ip_hdr = (sr_ip_hdr_t *)(current_packet->buf + ETHERNET_HDR_SIZE);
         // len = current_packet->len;
         // iface = current_packet->iface;
         dst_ip = ip_hdr->ip_src;/* reply to the source address that requested */
@@ -85,7 +85,7 @@ void sr_handle_arp_req(struct sr_instance *sr, struct sr_arpreq *req){
                 {
                     next_packet = current_packet->next;
                     ether_hdr = (sr_ethernet_hdr_t *)current_packet->buf;
-                    ip_hdr = (sr_ip_hdr_t *)(current_packet->buf + sizeof(sr_ethernet_hdr_t));
+                    ip_hdr = (sr_ip_hdr_t *)(current_packet->buf + ETHERNET_HDR_SIZE);
                     dst_ip = ip_hdr->ip_src;
                     send_icmp_error_notify(sr, ether_hdr, ip_hdr, ntohl(dst_ip), HOST_UNREACHABLE);
                 }
