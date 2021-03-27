@@ -31,6 +31,7 @@ typedef enum {
   inbound = 1,
   outbound
 }pkt_direct_t;
+
 struct sr_nat_connection {/* all data fiels is in network-byte ordered */
   /* use 4 tuple: source/ destination IP address and source/ destination port 
     in order to determine connection */
@@ -111,13 +112,13 @@ struct sr_nat_connection* sr_lookup_nat_tcpconnection(struct sr_nat *nat, struct
 
 /* Insert a new connection into the connection list in nat mapping entry.
    You must free the returned structure if it is not NULL. */
-struct sr_nat_connection* sr_insert_nat_tcpconnection(struct sr_nat *nat, struct sr_nat_mapping *mapping, sr_ip_hdr_t *ip_hdr, conn_state_t state, pkt_direct_t direct);
+struct sr_nat_connection* sr_insert_nat_tcpconnection(struct sr_nat *nat, struct sr_nat_mapping *mapping, sr_ip_hdr_t *ip_hdr, pkt_direct_t direct);
 
 /* Update a connection*/
-int sr_update_nat_tcpconnection(struct sr_nat *nat, struct sr_nat_connection *conn, sr_ip_hdr_t *ip_hdr, conn_state_t state, pkt_direct_t direct);
+int sr_update_nat_tcpconnection(struct sr_nat *nat, struct sr_nat_connection *conn, sr_ip_hdr_t *ip_hdr, pkt_direct_t direct);
 
 /* Get state */
-struct sr_nat_connection* sr_get_nat_tcpconnection(struct sr_nat *nat, struct sr_nat_connection *conn, sr_ip_hdr_t *ip_hdr);
+struct sr_nat_connection* sr_get_nat_tcpconnection(struct sr_nat *nat, struct sr_nat_mapping *mapping, struct sr_nat_connection *conn, sr_ip_hdr_t *ip_hdr);
 
 /* Destroy the specific connection */
 int sr_destroy_nat_tcpconnection(struct sr_nat *nat, struct sr_nat_mapping *mapping, struct sr_nat_connection *conn);

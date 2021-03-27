@@ -116,12 +116,15 @@ void *sr_nat_timeout(void *nat_ptr) {  /* Periodic Timout handling */
     {
       if((mapping_entry->type == nat_mapping_icmp) && (mapping_entry->valid) && (difftime(curtime, mapping_entry->last_updated) > ICMP_MAPPING_TIMEOUT))
       {
+        /* ICMP type */
         mapping_entry->valid = false;
       }
       if((mapping_entry->type == nat_mapping_tcp) && (mapping_entry->valid))
       {
+        /* TCP type */
+        /* checking connection */
         if((conn = mapping_entry->conns) == NULL)
-          goto next;
+          goto next;/* get out of this searching */
         for(conn = mapping_entry->conns; conn; conn = next_conn)
         {
           next_conn = conn->next;
@@ -129,24 +132,29 @@ void *sr_nat_timeout(void *nat_ptr) {  /* Periodic Timout handling */
           {
             if(difftime(curtime, conn->last_established) >= TCP_ESTABLISHED_TIMEOUT)
             {
-              sr_destroy_nat_tcpconnection(nat, mapping_entry, conn);
+              /* checking timeout when its state is establishment */
+              sr_destroy_nat_tcpconnection(nat, mapping_entry, conn);/* destroy connection entry if condition is matching */
             }
           }
           else if(conn->state == state_transitory)
           {
             if(difftime(curtime, conn->last_transitory) >= TCP_TRANSITORY)
             {
-              sr_destroy_nat_tcpconnection(nat, mapping_entry, conn);
+              /* checking timeout when its state is transitory */
+              sr_destroy_nat_tcpconnection(nat, mapping_entry, conn); /* destroy connection entry if condition is matching*/
             }
           }
           if((difftime(curtime, conn->last_transitory) >= TCP_TRANSITORY_UNSOLICITED) && 
             (conn->receive_SYN_ext == true) && (conn->state == state_transitory))
-          
+          {
+            /* checking timeout when its state is transitory and unsolicited */
+            sr_destroy_nat_tcpconnection(nat, mapping_entry, conn);/* destroy connection entry if condition is matching */
+          }
         }
       }
 next:
       if(mapping_entry->valid == false)
-        sr_nat_destroy_mapping(nat, mapping_entry);
+        sr_nat_destroy_mapping(nat, mapping_entry); /* destroy matching entry */
     }
     pthread_mutex_unlock(&(nat->lock));
   }
@@ -317,7 +325,7 @@ struct sr_nat_connection* sr_lookup_nat_tcpconnection(struct sr_nat *nat, struct
 
 /* Insert new connection and its state 
   return NULL if this is not SYN packet*/
-struct sr_nat_connection* sr_insert_nat_tcpconnection(struct sr_nat *nat, struct sr_nat_mapping *mapping, sr_ip_hdr_t *ip_hdr, conn_state_t state, pkt_direct_t direct)
+struct sr_nat_connection* sr_insert_nat_tcpconnection(struct sr_nat *nat, struct sr_nat_mapping *mapping, sr_ip_hdr_t *ip_hdr, pkt_direct_t direct)
 {
   pthread_mutex_lock(&(nat->lock));
   srand(time(NULL));
@@ -409,15 +417,14 @@ struct sr_nat_connection* sr_insert_nat_tcpconnection(struct sr_nat *nat, struct
   return copy;
 }
 
-/* Insert new connection and its state 
+/* Update new connection and its state 
   return NULL if this is not SYN packet*/
-int sr_update_nat_tcpconnection(struct sr_nat *nat, struct sr_nat_connection *conn, sr_ip_hdr_t *ip_hdr, conn_state_t state, pkt_direct_t direct)
+int sr_update_nat_tcpconnection(struct sr_nat *nat, struct sr_nat_connection *conn, sr_ip_hdr_t *ip_hdr, pkt_direct_t direct)
 {
   pthread_mutex_lock(&(nat->lock));
   srand(time(NULL));
   
   tcphdr_t *tcp_hdr = (tcphdr_t*)(ip_hdr + IP_HDR_SIZE);
-  struct sr_nat_connection *conn = NULL, *copy = NULL;
   time_t curtime = time(NULL);
   if(tcp_hdr->th_flags & TH_SYN)
   {
@@ -472,6 +479,8 @@ int sr_update_nat_tcpconnection(struct sr_nat *nat, struct sr_nat_connection *co
         (conn->receive_SYN_ext == true) && (conn->state == state_transitory))
         {
           conn->receive_SYN_ext = false; /*discard outbound SYN */
+          pthread_mutex_unlock(&(nat->lock));
+          return -1;
         }
       }
     }

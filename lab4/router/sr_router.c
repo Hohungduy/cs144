@@ -402,20 +402,28 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
     /* make a copy */
     uint8_t *copy_buf = malloc(len);
 	memcpy(copy_buf, packet, len);
+    
     /* ethernet and IP header*/
 	sr_ethernet_hdr_t *eth_hdr = (sr_ethernet_hdr_t *)copy_buf;
 	sr_ip_hdr_t *ip_hdr = (sr_ip_hdr_t *)(copy_buf + ETHERNET_HDR_SIZE);
+    
     /*routing entry and its interface */
     sr_rt_tt *routing_entry = NULL;
     struct sr_if *interface_entry = NULL;
     char *iface = NULL;
+    
     /* arp entry */
     struct sr_arpentry *arp_entry = NULL;
     struct sr_arpreq *req = NULL;
+    
     /* nat mapping entry*/
     struct sr_nat_mapping *nat_entry = NULL;
     pkt_direct_t direct;
     struct in_addr ext_addr;
+
+    /* nat tcp connection in mapping entry */
+    struct sr_nat_connection *conn_entry = NULL;
+
     /* Check TTL (use for traceroute)*/
     if(ip_hdr->ip_ttl == 1)
     {
@@ -449,7 +457,7 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
 
             /* rewrite ICMP ID */
             icmp_hdr->icmp_id = nat_entry->aux_int; /* internal ID */
-            /* compute checksum of ICMP header */
+            /* recompute checksum of ICMP header */
             icmp_hdr->icmp_sum = 0;
             icmp_hdr->icmp_sum = cksum(icmp_hdr, sizeof(sr_icmp_hdr_t) + icmp_datalen);
 
@@ -503,7 +511,6 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
                 /* allocate new mapping */
                 nat_entry = sr_nat_insert_mapping(&sr->nat, ip_hdr->ip_src, icmp_hdr->icmp_id, nat_mapping_icmp);
             }
-
             /* rewrite ICMP ID */
             icmp_hdr->icmp_id = nat_entry->aux_ext; /* external ID */
             /* compute checksum of ICMP header */
@@ -555,7 +562,7 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
         /* TCP packet */
         tcphdr_t *tcp_hdr = (tcphdr_t *)(copy_buf + ETHERNET_HDR_SIZE + IP_HDR_SIZE);
         uint32_t tcp_datalen = len - (uint32_t)(ETHERNET_HDR_SIZE + IP_HDR_SIZE + TCP_HDR_SIZE);
-        if(inet_aton(ext_ip_eth2,&ext_addr) == 0)
+        if(0 == inet_aton(ext_ip_eth2,&ext_addr))
         {
             fprintf(stderr,"[Error]: cannot convert %s to valid IP\n", ext_ip_eth2);
             return -1; 
@@ -570,22 +577,41 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
             nat_entry = sr_nat_lookup_external(&sr->nat, tcp_hdr->th_dport, nat_mapping_tcp);
             if(!nat_entry)
             {
-                /* there are no mapping */
+                /* there are no mapping -> discard this*/
+                return PORT_UNREACHABLE;
+            }
 
-
+            /* Connection lookup */
+            conn_entry = sr_lookup_nat_tcpconnection(&sr->nat, nat_entry, ip_hdr, direct);
+            if(!conn_entry)
+            {   /* insert new connection */
+                conn_entry = sr_insert_nat_tcpconnection(&sr->nat, nat_entry, ip_hdr, direct);
+                if(NULL == conn_entry)
+                {
+                    return -1;
+                }
+            }
+            else
+            {
+                /* update connection */
+                if(-1 == (ret = sr_update_nat_tcpconnection(&sr->nat, conn_entry, ip_hdr, direct)))
+                {
+                    fprintf(stderr, "[ERROR]: failed when update connection!\n");
+                    return -1;
+                }
             }
 
             /* rewrite TCP Port */
-            tcp_hdr->th_sport = nat_entry->aux_ext; /* external source port (random) (network-byte ordered) */
+            tcp_hdr->th_dport = nat_entry->aux_int; /* external source port (random) (network-byte ordered) */
             /* rewrite IP address */
-            ip_hdr->ip_src = nat_entry->ip_ext;/* external IP address (network-byte ordered) */
+            ip_hdr->ip_dst = nat_entry->ip_int;/* external IP address (network-byte ordered) */
             /* compute checksum of TCP header and Pseudoheader */
             tcp_hdr->th_sum = 0;
             tcp_hdr->th_sum = cksum_tcp(ip_hdr, tcp_datalen);
 
             /* find routing entry matching with destination ip address */
             routing_entry = sr_longest_prefix_match(sr, dst_ip);
-            if(routing_entry == NULL)
+            if(NULL == routing_entry)
             {
                 fprintf(stderr, "cannot find routing entry matching with destination Ip address\n");
                 return NET_UNREACHABLE;// return and send icmp (net unreachable)
@@ -618,6 +644,7 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
             ret = sr_send_packet(sr, copy_buf, len, iface);
             free(copy_buf);
             free(nat_entry);
+            free(conn_entry);
         }
         else /* Hard code for this lab */
         {
@@ -627,10 +654,30 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
             nat_entry = sr_nat_lookup_internal(&sr->nat, ip_hdr->ip_src, tcp_hdr->th_sport, nat_mapping_tcp);
             if(!nat_entry)
             {
-                /* allocate new mapping */
+                /* allocate new mapping -> insert new mapping*/
                 nat_entry = sr_nat_insert_mapping(&sr->nat, ip_hdr->ip_src, tcp_hdr->th_sport, nat_mapping_tcp);
             }
-
+            
+            /* Connection lookup */
+            conn_entry = sr_lookup_nat_tcpconnection(&sr->nat, nat_entry, ip_hdr, direct);
+            if(!conn_entry)
+            {   /* insert new connection */
+                conn_entry = sr_insert_nat_tcpconnection(&sr->nat, nat_entry, ip_hdr, direct);
+                if(NULL == conn_entry)
+                {
+                    return -1;
+                }
+            }
+            else
+            {
+                /* update connection */
+                if(-1 == (ret = sr_update_nat_tcpconnection(&sr->nat, conn_entry, ip_hdr, direct)))
+                {
+                    fprintf(stderr, "[ERROR]: failed when update connection!\n");
+                    return -1;
+                }
+            }
+            
             /* rewrite TCP Port */
             tcp_hdr->th_sport = nat_entry->aux_ext; /* external source port (random) (network-byte ordered) */
             /* rewrite IP address */
@@ -642,7 +689,7 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
 
             /* find routing entry matching with destination ip address */
             routing_entry = sr_longest_prefix_match(sr, dst_ip);
-            if(routing_entry == NULL)
+            if(NULL == routing_entry)
             {
                 fprintf(stderr, "cannot find routing entry matching with destination Ip address\n");
                 return NET_UNREACHABLE;// return and send icmp (net unreachable)
@@ -873,12 +920,19 @@ void sr_handlepacket(struct sr_instance* sr,
                 /* -----------------forward packet------------------------------ */
                 printf("*** <- Forward Packet\n");
                 ret = forward_packet(sr, packet, len, ip_hdr->ip_dst); // dont care interface we received this packet
-                if(ret != 0)
+                if (-1 == ret)
+                {
+                    fprintf(stderr, "[Error]: Dont forward it\n!");
+                    return;
+                }
+                else if(0 == ret)
+                    return;
+                else
                 {
                     printf("*** <- Forward Packet: Failed - Sent ICMP notify error:%d \n", ret);
                     send_icmp_error_notify(sr, ether_hdr, ip_hdr, ntohl(ip_hdr->ip_src), ret);
+                    return;
                 }
-                return;
             }
         }
     }
