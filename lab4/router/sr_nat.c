@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
-char *ext_ip_eth2 = "184.72.104.217";
+char *ext_ip_eth2 = "184.72.104.221";
 char *int_ip_eth1 = "10.0.1.1";
 int sr_nat_init(struct sr_nat *nat) { /* Initializes the nat */
 
@@ -178,7 +178,7 @@ struct sr_nat_mapping *sr_nat_lookup_external(struct sr_nat *nat,
   }
   for(mapping_entry = nat->mappings; mapping_entry != NULL; mapping_entry = mapping_entry->next)
   {
-    if((mapping_entry->aux_int == aux_ext) && (mapping_entry->valid = true))
+    if((mapping_entry->aux_ext == aux_ext) && (mapping_entry->valid = true))
     {
       match_entry = mapping_entry;
     }
@@ -257,12 +257,13 @@ struct sr_nat_mapping *sr_nat_insert_mapping(struct sr_nat *nat,
     mapping_entry->ip_int = ip_int;/* network byte ordered */
     if(inet_aton(ext_ip_eth2,&ext_addr) == 0)
     {
-      fprintf(stderr,"[Error]: cannot convert %s to valid IP\n", ext_ip_eth2);
+      fprintf(stderr, "[Error]: cannot convert %s to valid IP\n", ext_ip_eth2);
       pthread_mutex_unlock(&(nat->lock));
       exit(EXIT_FAILURE); 
     }
-    mapping_entry->ip_ext = htonl(ext_addr.s_addr);/* network byte ordered */
-    mapping_entry->aux_ext = htons(generate_random(1024, 65535));/* network byte ordered */
+    mapping_entry->ip_ext = ext_addr.s_addr;/* network byte ordered */
+    // mapping_entry->aux_ext = htons(generate_random(1024, 65535));/* network byte ordered */ 
+    mapping_entry->aux_ext = aux_int;/* network byte ordered */
     mapping_entry->valid = true;
     mapping_entry->last_updated = time(NULL);
     /* insert this mapping into list */

@@ -143,6 +143,10 @@ void sr_handle_arp_reply(struct sr_instance *sr, unsigned char *dst_mac, unsigne
         memcpy(ether_hdr->ether_dhost, dst_mac, ETHER_ADDR_LEN);
         memset(ether_hdr->ether_shost, 0, ETHER_ADDR_LEN);
         memcpy(ether_hdr->ether_shost, src_mac, ETHER_ADDR_LEN);
+        fprintf(stderr,"[%d]: %s\n", __LINE__, __func__);
+        #ifdef DEBUG_PRINT
+        print_hdrs(current_packet->buf, current_packet->len);
+        #endif
         ret = sr_send_packet(sr,current_packet->buf, current_packet->len, iface);
         if(-1 == ret)
             break;

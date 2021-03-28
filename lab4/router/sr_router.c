@@ -460,10 +460,14 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
             /* recompute checksum of ICMP header */
             icmp_hdr->icmp_sum = 0;
             icmp_hdr->icmp_sum = cksum(icmp_hdr, sizeof(sr_icmp_hdr_t) + icmp_datalen);
+            fprintf(stderr,"[%d]: %s\n", __LINE__, __func__);
 
             /* rewrite IP address */
             ip_hdr->ip_dst = nat_entry->ip_int;/* internal IP */
-
+            /* Update ttl and checksum value  */
+            ip_hdr->ip_ttl--;
+            ip_hdr->ip_sum = 0;
+            ip_hdr->ip_sum = cksum(ip_hdr, IP_HDR_SIZE);
             /* find routing entry matching with destination ip address */
             routing_entry = sr_longest_prefix_match(sr, ip_hdr->ip_dst);
             if(routing_entry == NULL)
@@ -475,6 +479,7 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
             /* match -> find MAC address*/
             interface_entry = sr_get_interface(sr, routing_entry->interface);
             iface = interface_entry->name;
+            fprintf(stderr,"[%d]: %s\n", __LINE__, __func__);
 
             /*ARP lookup*/
             arp_entry = sr_arpcache_lookup(&sr->cache, ip_hdr->ip_dst);
@@ -489,12 +494,12 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
                 sr_handle_arp_req(sr, req);
                 return 0;
             }
-
-            /* Update ttl and checksum value after finding arp entry */
-            ip_hdr->ip_ttl--;
-            ip_hdr->ip_sum = 0;
-            ip_hdr->ip_sum = cksum(ip_hdr, IP_HDR_SIZE);
+            fprintf(stderr,"[%d]: %s\n", __LINE__, __func__);
             
+            #ifdef DEBUG_PRINT
+            fprintf(stderr,"[%d]: %s\n", __LINE__, __func__);
+            print_hdrs(copy_buf, len);
+            #endif
             /* forwading packet */
             ret = sr_send_packet(sr, copy_buf, len, iface);
             free(copy_buf);
@@ -511,14 +516,20 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
                 /* allocate new mapping */
                 nat_entry = sr_nat_insert_mapping(&sr->nat, ip_hdr->ip_src, icmp_hdr->icmp_id, nat_mapping_icmp);
             }
+            fprintf(stderr,"[%d]: %s\n", __LINE__, __func__);
             /* rewrite ICMP ID */
             icmp_hdr->icmp_id = nat_entry->aux_ext; /* external ID */
             /* compute checksum of ICMP header */
             icmp_hdr->icmp_sum = 0;
             icmp_hdr->icmp_sum = cksum(icmp_hdr, sizeof(sr_icmp_hdr_t) + icmp_datalen);
+            fprintf(stderr,"[%d]: %s\n", __LINE__, __func__);
 
             /* rewrite IP address */
             ip_hdr->ip_src = nat_entry->ip_ext;/* external IP */
+            /* Update ttl and checksum value  */
+            ip_hdr->ip_ttl--;
+            ip_hdr->ip_sum = 0;
+            ip_hdr->ip_sum = cksum(ip_hdr, IP_HDR_SIZE);
 
             /* find routing entry matching with destination ip address */
             routing_entry = sr_longest_prefix_match(sr, dst_ip);
@@ -527,6 +538,7 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
                 fprintf(stderr, "cannot find routing entry matching with destination Ip address\n");
                 return NET_UNREACHABLE;// return and send icmp (net unreachable)
             }
+            fprintf(stderr,"[%d]: %s\n", __LINE__, __func__);
 
             /* match -> find MAC address*/
             interface_entry = sr_get_interface(sr, routing_entry->interface);
@@ -545,14 +557,15 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
                 sr_handle_arp_req(sr, req);
                 return 0;
             }
-
-            /* Update ttl and checksum value after finding arp entry */
-            ip_hdr->ip_ttl--;
-            ip_hdr->ip_sum = 0;
-            ip_hdr->ip_sum = cksum(ip_hdr, IP_HDR_SIZE);
-            
+            fprintf(stderr,"[%d]: %s\n", __LINE__, __func__);
+ 
+            #ifdef DEBUG_PRINT
+            fprintf(stderr,"[%d]: %s\n", __LINE__, __func__);
+            print_hdrs(copy_buf, len);
+            #endif
             /* forwading packet */
             ret = sr_send_packet(sr, copy_buf, len, iface);
+            fprintf(stderr,"[%d]: %s\n", __LINE__, __func__);
             free(copy_buf);
             free(nat_entry);
         }
@@ -609,6 +622,11 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
             tcp_hdr->th_sum = 0;
             tcp_hdr->th_sum = cksum_tcp(ip_hdr, tcp_datalen);
 
+            /* Update ttl and checksum value  */
+            ip_hdr->ip_ttl--;
+            ip_hdr->ip_sum = 0;
+            ip_hdr->ip_sum = cksum(ip_hdr, IP_HDR_SIZE);
+
             /* find routing entry matching with destination ip address */
             routing_entry = sr_longest_prefix_match(sr, dst_ip);
             if(NULL == routing_entry)
@@ -634,12 +652,11 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
                 sr_handle_arp_req(sr, req);
                 return 0;
             }
-
-            /* Update ttl and checksum value after finding arp entry */
-            ip_hdr->ip_ttl--;
-            ip_hdr->ip_sum = 0;
-            ip_hdr->ip_sum = cksum(ip_hdr, IP_HDR_SIZE);
             
+            #ifdef DEBUG_PRINT
+            fprintf(stderr,"[%d]: %s\n", __LINE__, __func__);
+            print_hdrs(copy_buf, len);
+            #endif
             /* forwading packet */
             ret = sr_send_packet(sr, copy_buf, len, iface);
             free(copy_buf);
@@ -685,7 +702,10 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
             /* compute checksum of TCP header */
             tcp_hdr->th_sum = 0;
             tcp_hdr->th_sum = cksum_tcp(ip_hdr, tcp_datalen);
-            
+            /* Update ttl and checksum value after finding arp entry */
+            ip_hdr->ip_ttl--;
+            ip_hdr->ip_sum = 0;
+            ip_hdr->ip_sum = cksum(ip_hdr, IP_HDR_SIZE);
 
             /* find routing entry matching with destination ip address */
             routing_entry = sr_longest_prefix_match(sr, dst_ip);
@@ -712,12 +732,11 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
                 sr_handle_arp_req(sr, req);
                 return 0;
             }
-
-            /* Update ttl and checksum value after finding arp entry */
-            ip_hdr->ip_ttl--;
-            ip_hdr->ip_sum = 0;
-            ip_hdr->ip_sum = cksum(ip_hdr, IP_HDR_SIZE);
             
+            #ifdef DEBUG_PRINT
+            fprintf(stderr,"[%d]: %s\n", __LINE__, __func__);
+            print_hdrs(copy_buf, len);
+            #endif
             /* forwading packet */
             ret = sr_send_packet(sr, copy_buf, len, iface);
             free(copy_buf);
@@ -861,6 +880,14 @@ void sr_handlepacket(struct sr_instance* sr,
     ether_hdr = (sr_ethernet_hdr_t *)packet;
 
     struct sr_if *interface_entry = NULL;
+    struct in_addr ext_addr;
+
+    /* using external ip address for some purpose */
+    if(inet_aton(ext_ip_eth2,&ext_addr) == 0)
+    {
+        fprintf(stderr,"[Error]: cannot convert %s to valid IP\n", ext_ip_eth2);
+        return; 
+    }
     if(ethertype(packet) == ethertype_ip){
         /* IP */
         ip_hdr = (sr_ip_hdr_t *)(packet + ETHERNET_HDR_SIZE);
@@ -878,7 +905,7 @@ void sr_handlepacket(struct sr_instance* sr,
             next_interface = current_interface->next;
             fprintf(stderr,"current ip inteface:\n");
             print_addr_ip_int(ntohl(current_interface->ip));
-            if(ntohl(ip_hdr->ip_dst) == ntohl(current_interface->ip))
+            if((ntohl(ip_hdr->ip_dst) == ntohl(current_interface->ip)) && (ntohl(current_interface->ip) != ntohl(ext_addr.s_addr)))
             {
                 /* ----------------sent to this host----------------------- */
                 if(ip_hdr->ip_p == ip_protocol_icmp)
