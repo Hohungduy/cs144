@@ -149,7 +149,7 @@ static sr_ip_hdr_t *create_ip_header(uint16_t ip_id,  uint32_t dst_ip, uint32_t 
 
     #ifdef DEBUG_PRINT
     fprintf(stderr, "Sending ICMP packet to ");
-	print_addr_ip_int(ntohl(dst_ip));
+	print_addr_ip_int(dst_ip); /*dst_ip : host byte ordered */
     #endif
 
     ip_icmp_hdr->ip_dst = (uint32_t)htonl(dst_ip); 
