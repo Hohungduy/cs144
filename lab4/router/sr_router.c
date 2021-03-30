@@ -319,7 +319,7 @@ int send_arp_request(struct sr_instance *sr, struct sr_arpreq *req)
     char *iface = interface->name;
 
     /* Create ARP request header */
-    sr_arp_hdr_t *arp_hdr = create_arp_header(broadcast_ether_addr, interface->addr, ntohl(dst_ip), ntohl(interface->ip), arp_op_request);
+    sr_arp_hdr_t *arp_hdr = create_arp_header(broadcast_ether_addr, interface->addr, ntohl(routing_entry->gw.s_addr), ntohl(interface->ip), arp_op_request);
 
     /* Create ARP reply header */
     sr_ethernet_hdr_t *ether_hdr = create_ethernet_header(broadcast_ether_addr, interface->addr, ethertype_arp);
@@ -480,7 +480,7 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
             iface = interface_entry->name;
 
             /*ARP lookup*/
-            arp_entry = sr_arpcache_lookup(&sr->cache, ip_hdr->ip_dst);
+            arp_entry = sr_arpcache_lookup(&sr->cache, routing_entry->gw.s_addr);
             if (arp_entry) {
                 /* update source and destination MAC address */
                 memcpy(eth_hdr->ether_shost, interface_entry->addr, ETHER_ADDR_LEN);
@@ -538,7 +538,7 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
             iface = interface_entry->name;
 
             /*ARP lookup*/
-            arp_entry = sr_arpcache_lookup(&sr->cache, dst_ip);
+            arp_entry = sr_arpcache_lookup(&sr->cache, routing_entry->gw.s_addr);
             if (arp_entry) {
                 /* update source and destination MAC address */
                 memcpy(eth_hdr->ether_shost, interface_entry->addr, ETHER_ADDR_LEN);
@@ -586,23 +586,11 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
             }
 
             /* Connection lookup */
-            conn_entry = sr_lookup_nat_tcpconnection(&sr->nat, ip_hdr, ip_hdr->ip_src, tcp_hdr->th_sport, tcp_hdr->th_dport, direct);
-            if(!conn_entry)
-            {   /* insert new connection */
-                conn_entry = sr_insert_nat_tcpconnection(&sr->nat, ip_hdr, ip_hdr->ip_src, tcp_hdr->th_sport, tcp_hdr->th_dport, direct);
-                if(NULL == conn_entry)
-                {
-                    return -1;
-                }
-            }
-            else
+            conn_entry = sr_lookup_insert_or_update_nat_tcpconnection(&sr->nat, ip_hdr, ip_hdr->ip_src, tcp_hdr->th_sport, tcp_hdr->th_dport, direct);
+            if(NULL == conn_entry)
             {
-                /* update connection */
-                if(-1 == (ret = sr_update_nat_tcpconnection(&sr->nat, conn_entry, ip_hdr, direct)))
-                {
-                    fprintf(stderr, "[ERROR]: failed when update connection!\n");
-                    return -1;
-                }
+                fprintf(stderr, "[%d]: %s\n", __LINE__, __func__);
+                return -1;
             }
 
             /* rewrite TCP Port */
@@ -631,7 +619,7 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
             iface = interface_entry->name;
 
             /*ARP lookup*/
-            arp_entry = sr_arpcache_lookup(&sr->cache, dst_ip);
+            arp_entry = sr_arpcache_lookup(&sr->cache, routing_entry->gw.s_addr);
             if (arp_entry) {
                 /* update source and destination MAC address */
                 memcpy(eth_hdr->ether_shost, interface_entry->addr, ETHER_ADDR_LEN);
@@ -666,25 +654,13 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
                 nat_entry = sr_nat_insert_mapping(&sr->nat, ip_hdr->ip_src, tcp_hdr->th_sport, nat_mapping_tcp);
             }
             /* Connection lookup */
-            conn_entry = sr_lookup_nat_tcpconnection(&sr->nat, ip_hdr, ip_hdr->ip_src, tcp_hdr->th_sport, tcp_hdr->th_dport, direct);
-            if(!conn_entry)
-            {   /* insert new connection */
-                conn_entry = sr_insert_nat_tcpconnection(&sr->nat, ip_hdr, ip_hdr->ip_src, tcp_hdr->th_sport, tcp_hdr->th_dport, direct);
-                if(NULL == conn_entry)
-                {
-                    return -1;
-                }
-            }
-            else
+            conn_entry = sr_lookup_insert_or_update_nat_tcpconnection(&sr->nat, ip_hdr, ip_hdr->ip_src, tcp_hdr->th_sport, tcp_hdr->th_dport, direct);
+            if(NULL == conn_entry)
             {
-                /* update connection */
-                if(-1 == (ret = sr_update_nat_tcpconnection(&sr->nat, conn_entry, ip_hdr, direct)))
-                {
-                    fprintf(stderr, "[ERROR]: failed when update connection!\n");
-                    return -1;
-                }
+                fprintf(stderr, "[%d]: %s\n", __LINE__, __func__);
+                return -1;
             }
-            
+
             /* rewrite TCP Port */
             tcp_hdr->th_sport = nat_entry->aux_ext; /* external source port (random) (network-byte ordered) */
             /* rewrite IP address */
@@ -710,7 +686,7 @@ int forward_packet(struct sr_instance *sr, uint8_t* packet, uint32_t len, uint32
             iface = interface_entry->name;
 
             /*ARP lookup*/
-            arp_entry = sr_arpcache_lookup(&sr->cache, dst_ip);
+            arp_entry = sr_arpcache_lookup(&sr->cache, routing_entry->gw.s_addr);
             if (arp_entry) {
                 /* update source and destination MAC address */
                 memcpy(eth_hdr->ether_shost, interface_entry->addr, ETHER_ADDR_LEN);

@@ -192,8 +192,8 @@ void print_hdr_tcp(uint8_t *buf) {
   fprintf(stderr, "TCP header:\n");
   fprintf(stderr, "\tth_sport: %d\n", ntohs(tcp_hdr->th_sport));
   fprintf(stderr, "\tth_dport: %d\n", ntohs(tcp_hdr->th_dport));
-  fprintf(stderr, "\tth_seq: %d\n", ntohl(tcp_hdr->th_seq));
-  fprintf(stderr, "\tth_ack: %d\n", ntohl(tcp_hdr->th_ack));
+  fprintf(stderr, "\tth_seq: %u\n", ntohl(tcp_hdr->th_seq));
+  fprintf(stderr, "\tth_ack: %u\n", ntohl(tcp_hdr->th_ack));
   fprintf(stderr, "\tth_flags: %x\n", tcp_hdr->th_flags);
   fprintf(stderr, "\tth_win: %d\n", ntohl(tcp_hdr->th_win));
   /* Keep checksum in NBO */

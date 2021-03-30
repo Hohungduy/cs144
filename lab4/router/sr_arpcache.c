@@ -129,7 +129,10 @@ void sr_handle_arp_reply(struct sr_instance *sr, unsigned char *dst_mac, unsigne
     sr_ethernet_hdr_t *ether_hdr = NULL;
 
     if((req = sr_arpcache_insert(cache, dst_mac, dst_ip)) == NULL)
+    {
+        fprintf(stderr,"[%d]: %s\n", __LINE__, __func__);
         return;
+    }
 
     /* send all packets on the req->packets linked list */
     if(req->packets == NULL)
@@ -263,7 +266,7 @@ struct sr_arpreq *sr_arpcache_insert(struct sr_arpcache *cache,
                                      uint32_t ip)
 {
     pthread_mutex_lock(&(cache->lock));
-    
+
     struct sr_arpreq *req, *prev = NULL, *next = NULL; 
     for (req = cache->requests; req != NULL; req = req->next) {
         if (req->ip == ip) {            
@@ -280,13 +283,13 @@ struct sr_arpreq *sr_arpcache_insert(struct sr_arpcache *cache,
         }
         prev = req;
     }
-    
+
     int i;
     for (i = 0; i < SR_ARPCACHE_SZ; i++) {
         if (!(cache->entries[i].valid))
             break;
     }
-    
+
     if (i != SR_ARPCACHE_SZ) {
         memcpy(cache->entries[i].mac, mac, 6);
         cache->entries[i].ip = ip;
@@ -385,7 +388,6 @@ void *sr_arpcache_timeout(void *sr_ptr) {
     while (1) {
         sleep(1.0);
         pthread_mutex_lock(&(cache->lock));
-    
         time_t curtime = time(NULL);
         
         int i;    

@@ -44,6 +44,10 @@ struct sr_nat_connection {/* all data fiels is in network-byte ordered */
   /* track init seqno and ackno in handshake stage */
   uint32_t init_int_seqno;   /* Internal initial sequence number */
   uint32_t init_ext_seqno;   /* External initial sequence number */
+
+  // uint32_t seqno;              /* Current sequence number */
+  // uint32_t next_seqno;         /* Sequence number of next segment to send */
+  // uint32_t ackno;              /* Current ack number */
   
   /* add TCP connection state data members here */
   time_t last_established; /* time stamp for Established state */
@@ -108,14 +112,13 @@ struct sr_nat_mapping *sr_nat_insert_mapping(struct sr_nat *nat,
 
 /* Get the connection asociated with this mapping and 4 tuples (source/ destination IP address/ port)
     You must free the returned structire if it is not NULL*/
-struct sr_nat_connection* sr_lookup_nat_tcpconnection(struct sr_nat *nat, sr_ip_hdr_t *ip_hdr, uint32_t ip_int, uint16_t aux_int, uint16_t aux_ext, pkt_direct_t direct);
+struct sr_nat_connection* sr_lookup_insert_or_update_nat_tcpconnection(struct sr_nat *nat, sr_ip_hdr_t *ip_hdr, uint32_t ip_int, uint16_t aux_int, uint16_t aux_ext, pkt_direct_t direct);
 
 /* Insert a new connection into the connection list in nat mapping entry.
    You must free the returned structure if it is not NULL. */
-struct sr_nat_connection* sr_insert_nat_tcpconnection(struct sr_nat *nat, sr_ip_hdr_t *ip_hdr, uint32_t ip_int, uint16_t aux_int, uint16_t aux_ext, pkt_direct_t direct);
-
+struct sr_nat_connection* sr_insert_nat_tcpconnection(struct sr_nat_mapping *mapping, sr_ip_hdr_t *ip_hdr, pkt_direct_t direct);
 /* Update a connection*/
-int sr_update_nat_tcpconnection(struct sr_nat *nat, struct sr_nat_connection *conn, sr_ip_hdr_t *ip_hdr, pkt_direct_t direct);
+int sr_update_nat_tcpconnection(struct sr_nat_connection *conn, sr_ip_hdr_t *ip_hdr, pkt_direct_t direct);
 
 /* Get state */
 struct sr_nat_connection* sr_get_nat_tcpconnection(struct sr_nat *nat, struct sr_nat_mapping *mapping, struct sr_nat_connection *conn, sr_ip_hdr_t *ip_hdr);
